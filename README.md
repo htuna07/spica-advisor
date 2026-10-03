@@ -1,3 +1,5 @@
 # Spica Advisor
 
-Spica Advisor reviews Spica resources—functions, buckets, secrets, policies, and more—to surface potential security issues, improvements, and optimization opportunities. It then provides practical suggestions for addressing them.
+Spica Advisor reviews Spica resources like functions, buckets, secrets, policies,
+and finds potential security issues, improvements, and optimizations. 
+It then provides practical suggestions for addressing them.
