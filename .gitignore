@@ -1,4 +1,5 @@
 .env
 resources/**
+/output/
 
 __pycache__/
