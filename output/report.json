@@ -1,0 +1,62 @@
+[
+  {
+    "policy_id": "6867ad4cde7058002c5bd533",
+    "affected_statements": [
+      {
+        "statement_index": 0,
+        "affected_buckets": [
+          {
+            "_id_": "69959c05f05c86002d5a89f6",
+            "report": {
+              "row_level_security_status": "applied_but_in_risk",
+              "reason": "`auth.attributes.msisdn == document.msisdn || auth.attributes.msisdn_token == document.msisdn_token || auth.attributes.role == 'admin'` includes owner-to-document comparisons, but the admin condition can bypass them.",
+              "includes_sensitive_information": true
+            }
+          }
+        ]
+      },
+      {
+        "statement_index": 1,
+        "affected_buckets": [
+          {
+            "_id_": "65dddbb8d38b07002c181db5",
+            "report": {
+              "row_level_security_status": "applied_but_in_risk",
+              "reason": "The expression `auth.attributes.role == 'admin' || auth.attributes.msisdn == document.msisdn || auth.attributes.msisdn_token == document.msisdn_token` includes owner-to-document comparisons, but the admin condition bypasses them.",
+              "includes_sensitive_information": true
+            }
+          },
+          {
+            "_id_": "69959c05f05c86002d5a89f6",
+            "report": {
+              "row_level_security_status": "applied_but_in_risk",
+              "reason": "`auth.attributes.msisdn == document.msisdn || auth.attributes.msisdn_token == document.msisdn_token || auth.attributes.role == 'admin'` includes owner-to-document comparisons, but the admin condition can bypass them.",
+              "includes_sensitive_information": true
+            }
+          }
+        ]
+      },
+      {
+        "statement_index": 2,
+        "affected_buckets": [
+          {
+            "_id_": "65dddbb8d38b07002c181db5",
+            "report": {
+              "row_level_security_status": "applied_but_in_risk",
+              "reason": "The expression `auth.attributes.role == 'admin' || auth.attributes.msisdn == document.msisdn || auth.attributes.msisdn_token == document.msisdn_token` includes owner-to-document comparisons, but the admin condition bypasses them.",
+              "includes_sensitive_information": true
+            }
+          },
+          {
+            "_id_": "69959c05f05c86002d5a89f6",
+            "report": {
+              "row_level_security_status": "applied_but_in_risk",
+              "reason": "`auth.attributes.msisdn == document.msisdn || auth.attributes.msisdn_token == document.msisdn_token || auth.attributes.role == 'admin'` includes owner-to-document comparisons, but the admin condition can bypass them.",
+              "includes_sensitive_information": true
+            }
+          }
+        ]
+      }
+    ]
+  }
+]
