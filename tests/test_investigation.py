@@ -50,7 +50,7 @@ def test_run_executes_steps_in_order_on_shared_context_and_returns_report():
         .build()
     )
 
-    report = investigation.run("some-project", llm=None)
+    report = investigation.run("some-project", runner=None)
 
     assert report == {"project": "some-project", "calls": ["first", "second"]}
 
@@ -67,5 +67,5 @@ def test_each_run_gets_a_fresh_context():
         .build()
     )
 
-    assert investigation.run("p", llm=None) == ["first"]
-    assert investigation.run("p", llm=None) == ["first"]
+    assert investigation.run("p", runner=None) == ["first"]
+    assert investigation.run("p", runner=None) == ["first"]

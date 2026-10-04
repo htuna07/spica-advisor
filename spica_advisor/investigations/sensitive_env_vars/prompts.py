@@ -1,6 +1,4 @@
-def sensitiveness_prompt(env_var_names):
-    names = "\n".join(f"- {name}" for name in env_var_names)
-    return f"""
+SENSITIVENESS_INSTRUCTIONS = """
 Classify how sensitive the value of each environment variable is likely to be,
 from its name. 
 
@@ -14,7 +12,9 @@ Set sensitiveness_level to exactly one of:
   Actually it's the grey area between high and low sensitivity.
 
 Write a very very short explanation of a few words for each, to their reason values.
-
-Environment variable names:
-{names}
 """
+
+
+def sensitiveness_input(env_var_names):
+    names = "\n".join(f"- {name}" for name in env_var_names)
+    return f"Environment variable names:\n{names}"

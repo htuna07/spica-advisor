@@ -1,6 +1,6 @@
+from spica_advisor.investigations.unauthenticated_endpoints.agents import ENDPOINT_RISK_AGENT
 from spica_advisor.investigations.unauthenticated_endpoints.context import UnauthenticatedEndpointsContext
-from spica_advisor.investigations.unauthenticated_endpoints.models import FunctionRiskResponse
-from spica_advisor.investigations.unauthenticated_endpoints.prompts import endpoint_risk_prompt
+from spica_advisor.investigations.unauthenticated_endpoints.prompts import endpoint_risk_input
 from spica_advisor.log import LOGGER
 from spica_advisor.resources import load_function_definitions
 
@@ -40,7 +40,7 @@ def prepare_for_analysis(context: UnauthenticatedEndpointsContext):
 def analyze_endpoints(context: UnauthenticatedEndpointsContext):
     if not context.analysis_inputs:
         return
-    response = context.llm.parse(endpoint_risk_prompt(context.analysis_inputs), FunctionRiskResponse)
+    response = context.runner.run(ENDPOINT_RISK_AGENT, endpoint_risk_input(context.analysis_inputs))
     context.function_risks = response.functions
 
 

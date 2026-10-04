@@ -1,9 +1,9 @@
 import re
 from collections.abc import Iterable
 
+from spica_advisor.investigations.broken_access_control.agents import BUCKET_ACL_AGENT, POLICY_ATTACHMENT_AGENT
 from spica_advisor.investigations.broken_access_control.context import BrokenAccessControlContext
-from spica_advisor.investigations.broken_access_control.models import BucketAclReport, ReportResponse
-from spica_advisor.investigations.broken_access_control.prompts import attachment_prompt, bucket_acl_prompt
+from spica_advisor.investigations.broken_access_control.prompts import attachment_input, bucket_acl_input
 from spica_advisor.log import LOGGER
 from spica_advisor.resources import load_buckets, load_functions, load_policies
 
@@ -46,7 +46,7 @@ def read_functions(context: BrokenAccessControlContext):
 
 
 def find_policy_attachments(context: BrokenAccessControlContext):
-    response = context.llm.parse(attachment_prompt(context.functions), ReportResponse)
+    response = context.runner.run(POLICY_ATTACHMENT_AGENT, attachment_input(context.functions))
     context.attachment_reports = response.reports
     attachment_files = {
         file
@@ -84,7 +84,7 @@ def find_bucket_accesses(context: BrokenAccessControlContext):
 
 def evaluate_bucket_rules(context: BrokenAccessControlContext):
     context.bucket_acl_reports = {
-        bucket_id: context.llm.parse(bucket_acl_prompt(context.buckets[bucket_id]), BucketAclReport).model_dump()
+        bucket_id: context.runner.run(BUCKET_ACL_AGENT, bucket_acl_input(context.buckets[bucket_id])).model_dump()
         for bucket_id in context.bucket_ids
     }
 

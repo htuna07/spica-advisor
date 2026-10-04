@@ -1,13 +1,4 @@
-def format_function(function):
-    return f"""function_id: {function["_id"]}
-```
-{function["content"]}
-```"""
-
-
-def endpoint_risk_prompt(functions):
-    sources = "\n\n".join(format_function(function) for function in functions)
-    return f"""
+ENDPOINT_RISK_INSTRUCTIONS = """
 Analyze javascript/typescript functions to find unauthenticated public endpoints
 and evaluate their risk, return report in desired format.
 
@@ -28,7 +19,16 @@ and evaluate their risk, return report in desired format.
 
 Return one entry per function with it's id, methods object array including
 method name, risk level, and reason.
-
-Functions:
-{sources}
 """
+
+
+def format_function(function):
+    return f"""function_id: {function["_id"]}
+```
+{function["content"]}
+```"""
+
+
+def endpoint_risk_input(functions):
+    sources = "\n\n".join(format_function(function) for function in functions)
+    return f"Functions:\n{sources}"

@@ -2,14 +2,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Self
 
-from spica_advisor.llm import LLM
 from spica_advisor.log import LOGGER
+from spica_advisor.runner import AgentRunner
 
 
 @dataclass
 class InvestigationContext:
     project: str
-    llm: LLM
+    runner: AgentRunner
     report: Any = None
 
 
@@ -22,8 +22,8 @@ class Investigation:
     context_type: type[InvestigationContext]
     steps: tuple[tuple[str, Step], ...]
 
-    def run(self, project, llm):
-        context = self.context_type(project=project, llm=llm)
+    def run(self, project, runner):
+        context = self.context_type(project=project, runner=runner)
         for step_name, step in self.steps:
             LOGGER.info("[%s] %s", self.name, step_name)
             step(context)

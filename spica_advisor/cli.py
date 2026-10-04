@@ -4,12 +4,12 @@ from pathlib import Path
 from pprint import pformat
 
 from spica_advisor.investigations import INVESTIGATIONS
-from spica_advisor.llm import LLM
 from spica_advisor.log import LOGGER, configure_logging
 from spica_advisor.report import write_report
+from spica_advisor.runner import AgentRunner
 
 
-DEFAULT_PROJECT = "spica-reward-service"
+DEFAULT_PROJECT = "spica-orchestrator"
 
 
 def investigation_names(value):
@@ -49,8 +49,8 @@ def selected_investigations(names):
     return [investigation for investigation in INVESTIGATIONS if investigation.name in names]
 
 
-def run_investigation(investigation, project, llm):
-    report = investigation.run(project, llm)
+def run_investigation(investigation, project, runner):
+    report = investigation.run(project, runner)
     write_report(project, investigation.name, report)
     if LOGGER.isEnabledFor(logging.DEBUG):
         LOGGER.debug("Full %s report:\n%s",
@@ -61,15 +61,15 @@ def run():
     args = parse_args()
     configure_logging(args.debug, args.log_file, args.log_format)
     try:
-        llm = LLM.from_env()
+        runner = AgentRunner.from_env()
     except Exception:
-        LOGGER.exception("Failed to initialize LLM client")
+        LOGGER.exception("Failed to initialize agent runner")
         raise SystemExit(1)
 
     failed = []
     for investigation in selected_investigations(args.investigations):
         try:
-            run_investigation(investigation, args.project, llm)
+            run_investigation(investigation, args.project, runner)
         except Exception:
             LOGGER.exception("Investigation %s failed", investigation.name)
             failed.append(investigation.name)

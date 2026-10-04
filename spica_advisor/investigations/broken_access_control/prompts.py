@@ -1,26 +1,22 @@
 import yaml
 
 
-def attachment_prompt(functions):
-    return (
-        "Find attached policies to users on the javascript functions and return result in desired format. "
-        "First you need to find where policies were attached to users, search code for following patterns: "
-        "1. devkit/database <db|database>.collection(\"user\").<updateOne|updateMany|insertOne|insertMany> "
-        "and relevant argument should include \"policies:[<policyids>]\" "
-        "2. devkit/auth <Auth|auth>.policy.attach(<userid>, <policyid>) "
-        "3. pure http call post request to the passport/user/<userid>/policy/<policyid>, with libraries like axios, fetch, etc. "
-        "When you identified this kind of policy attachment, follow the references to determine where policies were defined. "
-        "They could be \"process.env.<ENVIRONMENT_NAME>\", put name of them to the result if so, "
-        "and also they could be hardcoded \"POLICY_ID\", put id of them to the result if so. "
-        "I need file names and line numbers from where the policies were attached to users to where they were defined, including references. "
-        "For each report, include attachment_files: the JavaScript or TypeScript function file paths where a policy "
-        "attachment operation itself was found. Do not include files that only define or reference the policy. "
-        f"Here are the functions: {functions}"
-    )
+ATTACHMENT_INSTRUCTIONS = (
+    "Find attached policies to users on the given javascript functions and return result in desired format. "
+    "First you need to find where policies were attached to users, search code for following patterns: "
+    "1. devkit/database <db|database>.collection(\"user\").<updateOne|updateMany|insertOne|insertMany> "
+    "and relevant argument should include \"policies:[<policyids>]\" "
+    "2. devkit/auth <Auth|auth>.policy.attach(<userid>, <policyid>) "
+    "3. pure http call post request to the passport/user/<userid>/policy/<policyid>, with libraries like axios, fetch, etc. "
+    "When you identified this kind of policy attachment, follow the references to determine where policies were defined. "
+    "They could be \"process.env.<ENVIRONMENT_NAME>\", put name of them to the result if so, "
+    "and also they could be hardcoded \"POLICY_ID\", put id of them to the result if so. "
+    "I need file names and line numbers from where the policies were attached to users to where they were defined, including references. "
+    "For each report, include attachment_files: the JavaScript or TypeScript function file paths where a policy "
+    "attachment operation itself was found. Do not include files that only define or reference the policy."
+)
 
-
-def bucket_acl_prompt(bucket):
-    return f"""
+BUCKET_ACL_INSTRUCTIONS = """
 Evaluate both the read and write bucket ACL rules for row-level security.
 
 For each rule, set row_level_security_status to exactly one of:
@@ -41,7 +37,12 @@ Configuration for titles and fields like status, version, or in_use etc.
 
 Each reason must identify the specific ACL expression and give a very short
 explanation of the decision.
-
-Bucket schema:
-{yaml.safe_dump(bucket, sort_keys=False)}
 """
+
+
+def attachment_input(functions):
+    return f"Here are the functions: {functions}"
+
+
+def bucket_acl_input(bucket):
+    return f"Bucket schema:\n{yaml.safe_dump(bucket, sort_keys=False)}"

@@ -1,7 +1,6 @@
-from types import SimpleNamespace
-
 from spica_advisor import resources
 from spica_advisor.investigations import sensitive_env_vars
+from spica_advisor.investigations.sensitive_env_vars.agents import SENSITIVENESS_AGENT
 from spica_advisor.investigations.sensitive_env_vars.models import (
     EnvVarSensitiveness,
     SensitivenessResponse,
@@ -17,12 +16,14 @@ def write_env_var(root, project, env_id, key):
     )
 
 
-class FakeLLM:
+class FakeRunner:
     def __init__(self, response):
         self.response = response
+        self.agents = []
         self.prompts = []
 
-    def parse(self, prompt, schema):
+    def run(self, agent, prompt):
+        self.agents.append(agent)
         self.prompts.append(prompt)
         return self.response
 
@@ -39,24 +40,25 @@ def test_reports_only_medium_and_high_env_vars(tmp_path, monkeypatch):
     write_env_var(tmp_path, "demo", "id-1", "API_KEY")
     write_env_var(tmp_path, "demo", "id-2", "ADMIN_EMAIL")
     write_env_var(tmp_path, "demo", "id-3", "LOG_LEVEL")
-    llm = FakeLLM(SensitivenessResponse(env_vars=[
+    runner = FakeRunner(SensitivenessResponse(env_vars=[
         EnvVarSensitiveness(name="API_KEY", sensitiveness_level="high", reason="credential"),
         EnvVarSensitiveness(name="ADMIN_EMAIL", sensitiveness_level="medium", reason="personal data"),
         EnvVarSensitiveness(name="LOG_LEVEL", sensitiveness_level="low", reason="config"),
     ]))
 
-    report = sensitive_env_vars.build().run("demo", llm)
+    report = sensitive_env_vars.build().run("demo", runner)
 
     assert sorted(report, key=lambda entry: entry["_id"]) == [
         {"_id": "id-1", "report": {"sensitiveness_level": "high", "reason": "credential"}},
         {"_id": "id-2", "report": {"sensitiveness_level": "medium", "reason": "personal data"}},
     ]
-    assert "super-secret-value" not in llm.prompts[0]
+    assert runner.agents == [SENSITIVENESS_AGENT]
+    assert "super-secret-value" not in runner.prompts[0]
 
 
-def test_skips_llm_when_no_env_vars(tmp_path, monkeypatch):
+def test_skips_agent_when_no_env_vars(tmp_path, monkeypatch):
     monkeypatch.setattr(resources, "RESOURCES_ROOT", tmp_path)
-    llm = FakeLLM(response=None)
+    runner = FakeRunner(response=None)
 
-    assert sensitive_env_vars.build().run("demo", llm) == []
-    assert llm.prompts == []
+    assert sensitive_env_vars.build().run("demo", runner) == []
+    assert runner.prompts == []
