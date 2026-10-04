@@ -42,7 +42,7 @@ def matching_code(pattern, content):
 
 def find_function(functions, function_id_or_name):
     for function in functions:
-        if function_id_or_name in (function["_id"], function["schema"].get("name")):
+        if function_id_or_name in (function["_id"], function["name"]):
             return function
     raise ValueError(f"Function not found: {function_id_or_name}")
 
@@ -59,7 +59,7 @@ def search_all_code(ctx: RunContextWrapper[list[dict]], pattern: str) -> list[di
         pattern: Python regular expression, matched in multiline mode.
     """
     return [
-        {"function_id": function["_id"], "function_name": function["schema"].get("name"), "matches": matches}
+        {"function_id": function["_id"], "function_name": function["name"], "matches": matches}
         for function in ctx.context
         if (matches := matching_code(pattern, function["content"]))
     ]

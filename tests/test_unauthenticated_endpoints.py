@@ -79,6 +79,7 @@ def test_load_functions_includes_id_schema_and_content(tmp_path, monkeypatch):
     [definition] = resources.load_functions("demo")
 
     assert definition["_id"] == "fn-1"
+    assert definition["name"] == "fn-1"
     assert definition["schema"]["triggers"]["handler"]["type"] == "http"
     assert definition["content"] == "export function handler() {}"
 

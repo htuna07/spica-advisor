@@ -2,7 +2,7 @@ from agents import Agent
 
 from spica_advisor.investigations.broken_access_control.models import BucketAclReport, ReportResponse
 from spica_advisor.investigations.broken_access_control.prompts import ATTACHMENT_INSTRUCTIONS, BUCKET_ACL_INSTRUCTIONS
-from spica_advisor.investigations.broken_access_control.tools import search_all_code, search_function_code
+from spica_advisor.tools import search_all_code, search_function_code
 
 
 POLICY_ATTACHMENT_AGENT = Agent(

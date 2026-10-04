@@ -36,6 +36,7 @@ def load_functions(project):
         if schema:
             definitions.append({
                 "_id": schema.get("_id"),
+                "name": schema.get("name"),
                 "schema": schema,
                 "content": read_function_source(schema_path.parent),
             })
