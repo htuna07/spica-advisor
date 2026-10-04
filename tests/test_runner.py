@@ -124,6 +124,40 @@ def test_anthropic_profile_builds_native_anthropic_model(monkeypatch):
     assert model.model == "claude-test"
 
 
+@pytest.fixture
+def no_dotenv(monkeypatch):
+    monkeypatch.setattr("spica_advisor.runner.load_dotenv", lambda: None)
+
+
+def test_anthropic_runner_needs_no_openai_key(monkeypatch, fake_anthropic_model, no_dotenv):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("SPICA_ADVISOR_TRACING", raising=False)
+
+    runner = AgentRunner.from_env(ANTHROPIC_PROFILE)
+
+    assert runner.run_config.tracing_disabled
+
+
+@pytest.mark.parametrize("profile", [OPENAI_PROFILE, ANTHROPIC_PROFILE])
+def test_tracing_is_enabled_by_env_var(monkeypatch, fake_anthropic_model, no_dotenv, profile):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("SPICA_ADVISOR_TRACING", "true")
+
+    assert not AgentRunner.from_env(profile).run_config.tracing_disabled
+
+
+def test_tracing_requires_openai_key(monkeypatch, fake_anthropic_model, no_dotenv):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("SPICA_ADVISOR_TRACING", "1")
+
+    with pytest.raises(ValueError, match="requires OPENAI_API_KEY"):
+        AgentRunner.from_env(ANTHROPIC_PROFILE)
+
+
+def test_tracing_is_off_by_default():
+    assert AgentRunner(OPENAI_PROFILE).run_config.tracing_disabled
+
+
 def test_registered_profiles_are_keyed_by_name():
     assert all(name == profile.name for name, profile in MODEL_PROFILES.items())
 

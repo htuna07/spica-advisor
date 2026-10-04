@@ -15,11 +15,15 @@ class ModelProfile:
     settings: ModelSettings
 
     @property
-    def uses_responses_api(self):
+    def is_openai(self):
         return self.provider == "openai"
 
+    @property
+    def uses_responses_api(self):
+        return self.is_openai
+
     def build_model(self):
-        if self.provider == "openai":
+        if self.is_openai:
             return self.model_id
         return AnthropicModel(self.model_id)
 

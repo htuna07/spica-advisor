@@ -1,3 +1,4 @@
+import os
 import time
 
 from agents import Agent, RunConfig, Runner, Usage, set_default_openai_client
@@ -10,6 +11,12 @@ from spica_advisor.model_profiles import ModelProfile
 
 
 MAX_TURNS = 10
+TRACING_ENV_VAR = "SPICA_ADVISOR_TRACING"
+ENABLED_VALUES = {"1", "true", "yes"}
+
+
+def tracing_enabled():
+    return os.environ.get(TRACING_ENV_VAR, "").strip().lower() in ENABLED_VALUES
 
 
 def failed_run_progress(error):
@@ -20,11 +27,12 @@ def failed_run_progress(error):
 
 
 class AgentRunner:
-    def __init__(self, profile: ModelProfile):
+    def __init__(self, profile: ModelProfile, tracing=False):
         self.profile = profile
         self.run_config = RunConfig(
             model=profile.build_model(),
             model_settings=profile.settings,
+            tracing_disabled=not tracing,
         )
         self.hooks = InteractionLoggingHooks()
         self.calls: list[CallRecord] = []
@@ -32,8 +40,13 @@ class AgentRunner:
     @classmethod
     def from_env(cls, profile):
         load_dotenv()
-        set_default_openai_client(AsyncOpenAI())
-        return cls(profile)
+        tracing = tracing_enabled()
+        # Traces are exported to the OpenAI platform, whatever model produced them.
+        if tracing and not os.environ.get("OPENAI_API_KEY"):
+            raise ValueError(f"{TRACING_ENV_VAR} requires OPENAI_API_KEY")
+        if profile.is_openai:
+            set_default_openai_client(AsyncOpenAI())
+        return cls(profile, tracing)
 
     def run(self, agent: Agent, prompt, context=None):
         started = time.perf_counter()
