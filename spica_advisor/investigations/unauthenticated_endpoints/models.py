@@ -3,9 +3,12 @@ from typing import Literal
 from pydantic import BaseModel
 
 
+RiskLevel = Literal["low", "medium", "high"]
+
+
 class MethodRisk(BaseModel):
     name: str
-    risk_level: Literal["low", "medium", "high"]
+    risk_level: RiskLevel
     reason: str
 
 

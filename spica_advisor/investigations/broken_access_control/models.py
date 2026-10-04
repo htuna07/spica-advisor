@@ -3,6 +3,9 @@ from typing import Literal
 from pydantic import BaseModel
 
 
+RowLevelSecurityStatus = Literal["applied", "applied_but_in_risk", "not_applied"]
+
+
 class CodeLocation(BaseModel):
     function_id: str
     match: str
@@ -20,11 +23,7 @@ class ReportResponse(BaseModel):
 
 
 class RowLevelSecurityReport(BaseModel):
-    row_level_security_status: Literal[
-        "applied",
-        "applied_but_in_risk",
-        "not_applied",
-    ]
+    row_level_security_status: RowLevelSecurityStatus
     reason: str
 
 
