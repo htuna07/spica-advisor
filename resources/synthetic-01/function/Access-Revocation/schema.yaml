@@ -1,0 +1,13 @@
+_id: syn1-fn-revoke
+name: Access-Revocation
+language: javascript
+timeout: 60
+triggers:
+  revokeAccess:
+    type: http
+    active: true
+    options:
+      method: Post
+      path: /access/revoke
+      preflight: true
+      authorize: true

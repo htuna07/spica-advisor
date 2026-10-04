@@ -1,0 +1,21 @@
+_id: syn2-fn-reports
+name: Reports-Api
+language: javascript
+timeout: 60
+triggers:
+  trackDownload:
+    type: http
+    active: true
+    options:
+      method: Get
+      path: /reports/download
+      preflight: true
+      authorize: false
+  reportHealth:
+    type: http
+    active: true
+    options:
+      method: Get
+      path: /reports/health
+      preflight: true
+      authorize: false

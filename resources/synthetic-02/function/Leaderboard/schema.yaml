@@ -1,0 +1,19 @@
+_id: syn2-fn-leaderboard
+name: Leaderboard
+language: javascript
+timeout: 60
+triggers:
+  getLeaderboard:
+    type: http
+    active: true
+    options:
+      method: Get
+      path: /leaderboard
+      preflight: true
+      authorize: false
+  recalculate:
+    type: schedule
+    active: true
+    options:
+      frequency: '*/30 * * * *'
+      timezone: UTC

@@ -1,0 +1,11 @@
+_id: syn1-fn-partners
+name: Partner-Accounts
+language: javascript
+timeout: 60
+triggers:
+  approvePartner:
+    type: database
+    active: true
+    options:
+      collection: partner_requests
+      type: UPDATE

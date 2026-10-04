@@ -1,0 +1,241 @@
+import csv
+from types import SimpleNamespace
+
+import pytest
+
+from evals.cases import EvalCase
+from evals.harness import Matrix, new_run_dir, output_path, run_matrix, run_task
+from evals.storage import read_json, read_jsonl
+from evals.summary import write_summary
+from evals.tasks import TASKS
+from spica_advisor.investigations.broken_access_control.agents import BUCKET_ACL_AGENT, POLICY_ATTACHMENT_AGENT
+from spica_advisor.investigations.broken_access_control.models import (
+    BucketAclReport,
+    CodeLocation,
+    Report,
+    ReportResponse,
+    RowLevelSecurityReport,
+)
+from spica_advisor.investigations.sensitive_env_vars.agents import SENSITIVENESS_AGENT
+from spica_advisor.investigations.sensitive_env_vars.models import EnvVarSensitiveness, SensitivenessResponse
+from spica_advisor.investigations.unauthenticated_endpoints.agents import ENDPOINT_RISK_AGENT
+from spica_advisor.investigations.unauthenticated_endpoints.models import FunctionRisk, FunctionRiskResponse, MethodRisk
+from spica_advisor.metrics import CallRecord
+
+
+PUBLIC_SCHEMA = """\
+_id: fn-public
+name: Public
+triggers:
+  create:
+    type: http
+    active: true
+    options:
+      authorize: false
+"""
+
+PRIVATE_SCHEMA = """\
+_id: fn-private
+name: Private
+triggers:
+  attach:
+    type: http
+    active: true
+    options:
+      authorize: true
+"""
+
+LABELS = {
+    "sensitive-env-vars.yaml": "API_KEY: high\nLOG_LEVEL: low\n",
+    "unauthenticated-endpoints.yaml": "fn-public:\n  create: high\n",
+    "policy-attachments.yaml": "- function_id: fn-private\n  policy_id: policy-1\n",
+    "bucket-acl.yaml": (
+        "bucket-1:\n  includes_sensitive_information: true\n  read: applied\n  write: not_applied\n"
+        "bucket-2:\n  includes_sensitive_information: false\n  read: not_applied\n  write: not_applied\n"
+    ),
+}
+
+
+def write_file(path, content):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+@pytest.fixture
+def case(tmp_path):
+    case = EvalCase("demo", tmp_path / "resources" / "demo", tmp_path / "expected" / "demo")
+    write_file(case.project_dir / "function/Public/schema.yaml", PUBLIC_SCHEMA)
+    write_file(case.project_dir / "function/Public/index.mjs", "// public source\nexport function create(req, res) {}\n")
+    write_file(case.project_dir / "function/Private/schema.yaml", PRIVATE_SCHEMA)
+    write_file(case.project_dir / "function/Private/index.mjs", "// private source\n")
+    write_file(case.project_dir / "env-var/API_KEY/schema.yaml", "_id: env-1\nkey: API_KEY\nvalue: secret\n")
+    write_file(case.project_dir / "env-var/LOG_LEVEL/schema.yaml", "_id: env-2\nkey: LOG_LEVEL\n")
+    write_file(case.project_dir / "bucket/One/schema.yaml", "_id: bucket-1\ntitle: Users\n")
+    write_file(case.project_dir / "bucket/Two/schema.yaml", "_id: bucket-2\ntitle: Settings\n")
+    write_file(case.project_dir / "bucket/Three/schema.yaml", "_id: bucket-3\ntitle: Unlabeled\n")
+    for name, content in LABELS.items():
+        write_file(case.expected_dir / name, content)
+    return case
+
+
+def acl(status):
+    return RowLevelSecurityReport(row_level_security_status=status, reason="r")
+
+
+RESPONSES = {
+    SENSITIVENESS_AGENT.name: SensitivenessResponse(env_vars=[
+        EnvVarSensitiveness(name="API_KEY", sensitiveness_level="high", reason="r"),
+        EnvVarSensitiveness(name="LOG_LEVEL", sensitiveness_level="medium", reason="r"),
+    ]),
+    ENDPOINT_RISK_AGENT.name: FunctionRiskResponse(functions=[
+        FunctionRisk(function_id="fn-public", methods=[MethodRisk(name="create", risk_level="high", reason="r")]),
+    ]),
+    POLICY_ATTACHMENT_AGENT.name: ReportResponse(reports=[Report(
+        attachment=CodeLocation(function_id="fn-private", match="attach"),
+        definition=CodeLocation(function_id="fn-private", match="const"),
+        policy_id="policy-1",
+        policy_name=None,
+    )]),
+    BUCKET_ACL_AGENT.name: BucketAclReport(
+        includes_sensitive_information=True, read=acl("applied"), write=acl("not_applied"),
+    ),
+}
+
+
+class FakeRunner:
+    def __init__(self, name="claude-haiku-4-5", failing_prompts=()):
+        self.profile = SimpleNamespace(name=name)
+        self.calls = []
+        self.prompts = []
+        self.failing_prompts = failing_prompts
+
+    def run(self, agent, prompt, context=None):
+        self.prompts.append((agent.name, prompt))
+        failed = any(marker in prompt for marker in self.failing_prompts)
+        self.calls.append(CallRecord(
+            agent=agent.name, model=self.profile.name, status="ModelBehaviorError" if failed else "ok",
+            wall_seconds=1.0, requests=1, tool_calls=0, input_tokens=1000, cached_input_tokens=0,
+            cache_write_tokens=0, output_tokens=100, reasoning_tokens=0,
+        ))
+        if failed:
+            raise RuntimeError("model failed")
+        return RESPONSES[agent.name]
+
+
+def prompts_for(runner, agent):
+    return [prompt for name, prompt in runner.prompts if name == agent.name]
+
+
+def test_endpoint_task_sends_only_public_function_source(case):
+    runner = FakeRunner()
+
+    prediction = TASKS["unauthenticated_endpoints"].predict(case, case.load_labels(), runner)
+
+    [prompt] = prompts_for(runner, ENDPOINT_RISK_AGENT)
+    assert "// public source" in prompt and "// private source" not in prompt
+    assert prediction == [{"function_id": "fn-public", "methods": [
+        {"name": "create", "risk_level": "high", "reason": "r"},
+    ]}]
+
+
+def test_env_var_task_sends_names_without_values(case):
+    runner = FakeRunner()
+
+    prediction = TASKS["sensitive_env_vars"].predict(case, case.load_labels(), runner)
+
+    [prompt] = prompts_for(runner, SENSITIVENESS_AGENT)
+    assert "API_KEY" in prompt and "secret" not in prompt
+    assert prediction["LOG_LEVEL"]["sensitiveness_level"] == "medium"
+
+
+def test_bucket_task_evaluates_only_labeled_buckets_and_survives_failures(case):
+    runner = FakeRunner(failing_prompts=("Settings",))
+
+    prediction = TASKS["bucket_acl"].predict(case, case.load_labels(), runner)
+
+    assert len(prompts_for(runner, BUCKET_ACL_AGENT)) == 2
+    assert list(prediction) == ["bucket-1"]
+
+
+def test_run_task_skips_tasks_without_input(tmp_path, case):
+    empty = EvalCase("empty", tmp_path / "resources" / "empty", case.expected_dir)
+    empty.project_dir.mkdir(parents=True)
+    runner = FakeRunner()
+
+    run_task(tmp_path / "run", runner, empty, case.load_labels(), 1, TASKS["policy_attachments"])
+
+    assert runner.prompts == []
+    assert not (tmp_path / "run").exists()
+
+
+def test_run_task_records_output_run_and_tagged_calls(tmp_path, case):
+    run_dir = tmp_path / "run"
+
+    run_task(run_dir, FakeRunner(), case, case.load_labels(), 2, TASKS["policy_attachments"])
+
+    output = read_json(output_path(run_dir, "claude-haiku-4-5", "demo", 2, "policy_attachments"))
+    assert output["status"] == "ok"
+    assert output["prediction"][0]["policy_id"] == "policy-1"
+    [run] = read_jsonl(run_dir / "runs.jsonl")
+    assert run == {"model": "claude-haiku-4-5", "case": "demo", "repeat": 2, "task": "policy_attachments",
+                   "status": "ok", "wall_seconds": run["wall_seconds"], "calls": 1}
+    [call] = read_jsonl(run_dir / "calls.jsonl")
+    assert (call["case"], call["repeat"], call["task"], call["agent"]) == (
+        "demo", 2, "policy_attachments", POLICY_ATTACHMENT_AGENT.name,
+    )
+
+
+def test_run_task_records_failed_prediction(tmp_path, case):
+    run_dir = tmp_path / "run"
+
+    run_task(run_dir, FakeRunner(failing_prompts=("Environment",)), case, case.load_labels(), 1,
+             TASKS["sensitive_env_vars"])
+
+    output = read_json(output_path(run_dir, "claude-haiku-4-5", "demo", 1, "sensitive_env_vars"))
+    assert output == {"status": "RuntimeError", "prediction": None}
+    [call] = read_jsonl(run_dir / "calls.jsonl")
+    assert call["status"] == "ModelBehaviorError"
+
+
+def test_matrix_run_produces_scored_summary(tmp_path, case):
+    run_dir = tmp_path / "run"
+    pricing = tmp_path / "pricing.yaml"
+    pricing.write_text(
+        "usd_per_million_tokens:\n"
+        "  claude-haiku-4-5: {input: 1.0, cached_input: 0.1, cache_write: 1.25, output: 5.0}\n"
+    )
+    matrix = Matrix(models=["claude-haiku-4-5"], cases=["demo"], repeats=2, tasks=list(TASKS))
+
+    run_matrix(matrix, run_dir, [case], create_runner=lambda profile: FakeRunner(profile.name))
+    summary_path = write_summary(
+        run_dir, expected_root=tmp_path / "expected", resources_root=tmp_path / "resources", pricing_path=pricing,
+    )
+
+    summary = summary_path.read_text()
+    assert "### sensitive_env_vars" in summary
+    with (run_dir / "summary.csv").open() as file:
+        rows = {(row["task"], row["case"]): row for row in csv.DictReader(file)}
+    overall_env = rows[("sensitive_env_vars", "all")]
+    assert float(overall_env["accuracy"]) == pytest.approx(0.5)
+    assert float(overall_env["consistency"]) == 1.0
+    assert overall_env["runs"] == "2"
+    assert float(rows[("bucket_acl", "all")]["read_accuracy"]) == pytest.approx(0.5)
+    assert float(rows[("policy_attachments", "all")]["f1"]) == 1.0
+    assert float(rows[("bucket_acl", "all")]["cost_per_run"]) == pytest.approx(2 * (1000 * 1.0 + 100 * 5.0) / 1e6)
+
+
+    results = read_json(run_dir / "results.json")
+    assert results["matrix"]["models"] == ["claude-haiku-4-5"]
+    assert results["metadata"]["agents"]["bucket_acl"]["prompt_fingerprint"]
+    assert results["tasks"]["sensitive_env_vars"]["primary_metric"] == "accuracy"
+    assert "high_as_low" not in results["tasks"]["sensitive_env_vars"]["percent_metrics"]
+    report = (run_dir / "report.html").read_text()
+    assert "__BENCHMARK_DATA__" not in report
+    assert '"run": "run"' in report
+
+
+def test_new_run_dirs_never_collide(tmp_path):
+    first, second = new_run_dir(tmp_path), new_run_dir(tmp_path)
+
+    assert first != second
+    assert first.is_dir() and second.is_dir()

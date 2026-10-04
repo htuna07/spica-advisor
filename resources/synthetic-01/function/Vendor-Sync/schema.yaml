@@ -1,0 +1,11 @@
+_id: syn1-fn-vendor
+name: Vendor-Sync
+language: javascript
+timeout: 60
+triggers:
+  syncVendors:
+    type: schedule
+    active: true
+    options:
+      frequency: '*/15 * * * *'
+      timezone: UTC

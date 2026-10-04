@@ -1,0 +1,728 @@
+<title>Spica Advisor Model Benchmark</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one report column - run header, model strip, agent x model leaderboard, tabbed agent detail (quality bars + quality/cost plot + full numbers), pricing and method notes. */
+:root {
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-2: #f8f9fa;
+  --ink: #11161c;
+  --ink-2: #4b535d;
+  --muted: #7a828c;
+  --grid: #e4e7eb;
+  --axis: #c4cad1;
+  --border: rgba(17, 22, 28, 0.11);
+  --focus: #2a78d6;
+  --critical: #d03b3b;
+  --good-text: #006300;
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
+  --series-5: #e87ba4; --series-6: #008300; --series-7: #4a3aa7; --series-8: #e34948;
+  --series-other: #9aa1a9;
+  --heat-0: #e7eef8; --heat-1: #cde2fb; --heat-2: #9ec5f4; --heat-3: #6da7ec;
+  --heat-4: #3987e5; --heat-5: #256abf; --heat-6: #184f95;
+  --heat-fg-0: #11161c; --heat-fg-1: #11161c; --heat-fg-2: #11161c; --heat-fg-3: #11161c; --heat-fg-4: #11161c; --heat-fg-5: #ffffff; --heat-fg-6: #ffffff;
+  --heat-none: #eef0f2;
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c0e11; --surface: #15181c; --surface-2: #1b1f24;
+    --ink: #f1f3f5; --ink-2: #b8bfc7; --muted: #8a929b;
+    --grid: #262b31; --axis: #3b4249; --border: rgba(255, 255, 255, 0.10);
+    --focus: #3987e5; --critical: #e06060; --good-text: #0ca30c;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+    --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767;
+    --series-other: #6b737c;
+    --heat-0: #13233a; --heat-1: #0d366b; --heat-2: #104281; --heat-3: #1c5cab;
+    --heat-4: #3987e5; --heat-5: #6da7ec; --heat-6: #9ec5f4;
+    --heat-fg-0: #f1f3f5; --heat-fg-1: #f1f3f5; --heat-fg-2: #f1f3f5; --heat-fg-3: #f1f3f5; --heat-fg-4: #11161c; --heat-fg-5: #11161c; --heat-fg-6: #11161c;
+    --heat-none: #1e2227;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c0e11; --surface: #15181c; --surface-2: #1b1f24;
+  --ink: #f1f3f5; --ink-2: #b8bfc7; --muted: #8a929b;
+  --grid: #262b31; --axis: #3b4249; --border: rgba(255, 255, 255, 0.10);
+  --focus: #3987e5; --critical: #e06060; --good-text: #0ca30c;
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+  --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767;
+  --series-other: #6b737c;
+  --heat-0: #13233a; --heat-1: #0d366b; --heat-2: #104281; --heat-3: #1c5cab;
+  --heat-4: #3987e5; --heat-5: #6da7ec; --heat-6: #9ec5f4;
+  --heat-fg-0: #f1f3f5; --heat-fg-1: #f1f3f5; --heat-fg-2: #f1f3f5; --heat-fg-3: #f1f3f5; --heat-fg-4: #11161c; --heat-fg-5: #11161c; --heat-fg-6: #11161c;
+  --heat-none: #1e2227;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  padding-inline: 16px;
+  padding-block: 28px 56px;
+}
+.page { max-width: 1180px; margin-inline: auto; display: grid; gap: 28px; }
+.sections { display: grid; gap: 40px; min-width: 0; }
+.page > *, .sections > *, .section > *, .agent > *, .panel > * { min-width: 0; }
+h1, h2, h3 { margin: 0; text-wrap: balance; font-weight: 600; }
+h1 { font-size: clamp(26px, 4vw, 34px); letter-spacing: -0.01em; line-height: 1.15; }
+h2 { font-size: 19px; }
+h3 { font-size: 15px; }
+p { margin: 0; }
+.eyebrow { font-size: 12px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.mono { font-family: var(--font-mono); font-size: 0.92em; }
+.muted { color: var(--muted); }
+.secondary { color: var(--ink-2); }
+.num { font-variant-numeric: tabular-nums; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+header.run { display: grid; gap: 10px; }
+.title-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px 16px; }
+.title-row a { color: var(--focus); font-size: 15px; }
+.run-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--ink-2); font-size: 14px; }
+.run-meta span { white-space: nowrap; }
+
+.section { display: grid; gap: 14px; }
+.section-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+.section-head p { color: var(--ink-2); font-size: 14px; max-width: 70ch; }
+
+.models { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.model-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 16px; display: grid; gap: 12px; align-content: start;
+}
+.model-name { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.model-id { font-size: 12.5px; color: var(--muted); }
+.model-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin: 0; }
+.model-stats div { display: grid; gap: 1px; min-width: 0; }
+.model-stats dt { font-size: 12px; color: var(--muted); }
+.model-stats dd { margin: 0; font-size: 17px; font-weight: 600; }
+.pill {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 500;
+  padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--ink-2); white-space: nowrap;
+}
+.pill.critical { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 35%, transparent); }
+.pill.good { color: var(--good-text); border-color: color-mix(in srgb, var(--good-text) 35%, transparent); }
+.pill .icon { font-weight: 700; }
+
+.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--grid); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th { font-size: 12px; font-weight: 500; color: var(--muted); white-space: nowrap; background: var(--surface-2); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.agent-cell { min-width: 220px; }
+td.agent-cell .desc { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+.heat {
+  border-radius: 7px; padding: 8px 10px; min-width: 132px; display: grid; gap: 1px;
+  background: var(--heat-none); color: var(--ink);
+}
+.heat .value { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.heat .sub { font-size: 12px; opacity: 0.85; font-variant-numeric: tabular-nums; }
+.heat-legend { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.heat-legend .ramp { display: flex; gap: 2px; }
+.heat-legend .ramp span { width: 22px; height: 10px; border-radius: 2px; }
+
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--grid); }
+.tab {
+  appearance: none; background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  padding: 9px 12px; font: inherit; font-size: 14px; font-weight: 500; color: var(--ink-2); cursor: pointer;
+}
+.tab:hover { color: var(--ink); }
+.tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+
+.agent { display: grid; gap: 16px; }
+.agent-head { display: grid; gap: 8px; }
+.agent-head .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+details.instructions { font-size: 13.5px; }
+details.instructions summary { cursor: pointer; color: var(--ink-2); }
+details.instructions pre {
+  white-space: pre-wrap; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.55;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin: 8px 0 0;
+  max-height: 360px; overflow: auto;
+}
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+.panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 12px; }
+.panel {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 16px; display: grid; gap: 12px; align-content: start; min-width: 0;
+}
+.panel-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
+
+.bars { display: grid; gap: 14px; }
+.bar-group { display: grid; gap: 4px; }
+.bar-group-label { font-size: 13px; color: var(--ink-2); }
+.bar-group-help { font-size: 12px; color: var(--muted); margin-top: -2px; max-width: 60ch; }
+td .metric-help { font-size: 12.5px; color: var(--muted); margin-top: 2px; max-width: 58ch; }
+.guide { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; display: grid; gap: 14px; }
+.guide dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 14px 24px; margin: 0; }
+.guide dl div { display: grid; gap: 2px; align-content: start; }
+.guide dt { font-weight: 600; font-size: 14px; }
+.guide dd { margin: 0; color: var(--ink-2); font-size: 14px; }
+.guide .rule { color: var(--ink-2); font-size: 14px; }
+.bar-row { display: grid; grid-template-columns: minmax(0, 1fr) 56px; align-items: center; gap: 8px; }
+.bar-track { position: relative; height: 12px; background: linear-gradient(var(--grid), var(--grid)) left center / 100% 1px no-repeat; }
+.bar {
+  height: 12px; border-radius: 0 4px 4px 0; min-width: 2px; cursor: default;
+  transition: filter 120ms ease;
+}
+.bar:hover, .bar:focus-visible { filter: brightness(1.12); }
+.bar-value { font-size: 12.5px; color: var(--ink-2); text-align: right; font-variant-numeric: tabular-nums; }
+.bar-axis { display: grid; grid-template-columns: minmax(0, 1fr) 56px; gap: 8px; font-size: 11.5px; color: var(--muted); }
+.bar-axis div { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
+
+.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; padding: 2px; background: var(--surface-2); }
+.segmented button {
+  appearance: none; border: 0; background: none; font: inherit; font-size: 13px; padding: 4px 10px;
+  border-radius: 6px; color: var(--ink-2); cursor: pointer;
+}
+.segmented button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 0 0 1px var(--border); }
+.plot { width: 100%; min-height: 260px; }
+.plot svg { display: block; width: 100%; height: auto; overflow: visible; }
+.plot text { font-family: var(--font-sans); }
+.plot-note { font-size: 12.5px; color: var(--muted); }
+
+.tooltip {
+  position: fixed; z-index: 10; pointer-events: none; background: var(--surface); color: var(--ink);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14); max-width: 260px; display: grid; gap: 2px;
+}
+.tooltip strong { font-size: 15px; font-variant-numeric: tabular-nums; }
+.tooltip .key { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.tooltip .key i { width: 12px; height: 2px; border-radius: 1px; display: inline-block; }
+
+.notes { display: grid; gap: 6px; color: var(--ink-2); font-size: 14px; max-width: 80ch; padding-left: 18px; margin: 0; }
+.empty {
+  background: var(--surface); border: 1px dashed var(--axis); border-radius: var(--radius); padding: 24px;
+  color: var(--ink-2); display: grid; gap: 6px;
+}
+@media (prefers-reduced-motion: reduce) { .bar { transition: none; } }
+</style>
+
+<main class="page" id="app">
+  <header class="run">
+    <span class="eyebrow">Spica Advisor · agent evals</span>
+    <div class="title-row">
+      <h1>Model benchmark</h1>
+      <a href="cases.html">Edit cases and run the benchmark</a>
+    </div>
+    <div class="run-meta" id="run-meta"></div>
+  </header>
+  <div id="content" class="sections"></div>
+</main>
+<div class="tooltip" id="tooltip" role="status" hidden></div>
+
+<script id="benchmark-data" type="application/json">__BENCHMARK_DATA__</script>
+<script>
+(function () {
+  const SERIES_SLOTS = 8;
+  const PLOT_HEIGHT = 280;
+
+  function loadData() {
+    try {
+      return JSON.parse(document.getElementById("benchmark-data").textContent);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function el(tag, attrs, children) {
+    const node = document.createElement(tag);
+    Object.entries(attrs || {}).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === false) return;
+      if (key === "class") node.className = value;
+      else if (key === "text") node.textContent = value;
+      else if (key === "style") node.setAttribute("style", value);
+      else node.setAttribute(key, value === true ? "" : value);
+    });
+    (children || []).forEach((child) => {
+      if (child === null || child === undefined) return;
+      node.appendChild(typeof child === "string" ? document.createTextNode(child) : child);
+    });
+    return node;
+  }
+
+  function svgEl(tag, attrs) {
+    const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    Object.entries(attrs || {}).forEach(([key, value]) => node.setAttribute(key, value));
+    return node;
+  }
+
+  const ACRONYMS = { acl: "ACL", f1: "F1", p95: "P95", llm: "LLM" };
+
+  function humanize(name) {
+    const text = String(name).split("_").map((word) => ACRONYMS[word] || word).join(" ");
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  function formatPrice(value) {
+    return "$" + value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 3 });
+  }
+
+  function formatPercent(value) { return (value * 100).toFixed(1) + "%"; }
+  function formatCost(value) {
+    if (value >= 1) return "$" + value.toFixed(2);
+    if (value >= 0.01) return "$" + value.toFixed(3);
+    return "$" + value.toFixed(4);
+  }
+  function formatSeconds(value) { return value.toFixed(1) + "s"; }
+  function formatCount(value) {
+    return Number.isInteger(value) ? value.toLocaleString("en-US") : value.toLocaleString("en-US", { maximumFractionDigits: 1 });
+  }
+
+  function format(metric, value, percentMetrics) {
+    if (value === null || value === undefined || value === "") return "n/a";
+    if (metric.includes("cost")) return formatCost(value);
+    if (metric.includes("seconds")) return formatSeconds(value);
+    if (percentMetrics.includes(metric)) return formatPercent(value);
+    return formatCount(value);
+  }
+
+  const data = loadData();
+  const content = document.getElementById("content");
+  const tooltip = document.getElementById("tooltip");
+
+  if (!data) {
+    content.appendChild(el("div", { class: "empty" }, [
+      el("strong", { text: "No benchmark data in this page yet" }),
+      el("p", { text: "Run python -m evals run, or python -m evals report evals/runs/<run>, to write report.html with results embedded." }),
+    ]));
+    return;
+  }
+
+  const models = data.matrix.models;
+  const tasks = data.matrix.tasks.filter((task) => data.tasks[task]);
+  const agents = (data.metadata && data.metadata.agents) || {};
+  const profiles = (data.metadata && data.metadata.model_profiles) || {};
+  const rows = {};
+  data.rows.forEach((row) => { rows[`${row.model}|${row.task}|${row.case}`] = row; });
+  const row = (model, task, caseName) => rows[`${model}|${task}|${caseName || "all"}`];
+  const totals = {};
+  data.totals.forEach((total) => { totals[total.model] = total; });
+
+  function seriesColor(model) {
+    const index = models.indexOf(model);
+    return index >= 0 && index < SERIES_SLOTS ? `var(--series-${index + 1})` : "var(--series-other)";
+  }
+
+  function agentName(task) { return (agents[task] && agents[task].name) || humanize(task); }
+
+  function casesRun(task) {
+    return data.matrix.cases.filter((caseName) => models.some((model) => row(model, task, caseName)));
+  }
+
+  function coverageText(task) {
+    return `Runs on ${casesRun(task).length} of ${data.matrix.cases.length} cases`;
+  }
+
+  function metricHelp(task, metric) {
+    const taskHelp = (data.tasks[task] && data.tasks[task].metric_help) || {};
+    return taskHelp[metric] || (data.usage_help || {})[metric] || "";
+  }
+
+  function showTooltip(target, valueText, keyColor, keyText, detail) {
+    tooltip.replaceChildren(
+      el("strong", { text: valueText }),
+      el("span", { class: "key" }, [el("i", { style: `background:${keyColor}` }), keyText]),
+      detail ? el("span", { class: "muted", text: detail }) : null,
+    );
+    tooltip.hidden = false;
+    const rect = target.getBoundingClientRect();
+    const tipRect = tooltip.getBoundingClientRect();
+    const left = Math.min(window.innerWidth - tipRect.width - 8, Math.max(8, rect.left + rect.width / 2 - tipRect.width / 2));
+    const top = rect.top - tipRect.height - 8 > 8 ? rect.top - tipRect.height - 8 : rect.bottom + 8;
+    tooltip.style.left = left + "px";
+    tooltip.style.top = top + "px";
+  }
+  function hideTooltip() { tooltip.hidden = true; }
+  function attachTooltip(node, show) {
+    node.addEventListener("pointerenter", () => show(node));
+    node.addEventListener("pointerleave", hideTooltip);
+    node.addEventListener("focus", () => show(node));
+    node.addEventListener("blur", hideTooltip);
+  }
+  window.addEventListener("scroll", hideTooltip, { passive: true });
+
+  function renderRunMeta() {
+    const meta = document.getElementById("run-meta");
+    const started = data.metadata && data.metadata.started_at;
+    [
+      el("span", {}, ["Run ", el("span", { class: "mono", text: data.run })]),
+      started ? el("span", { text: "Started " + started.replace("T", " ").replace("+00:00", " UTC") }) : null,
+      el("span", { text: `${models.length} models` }),
+      el("span", { text: `${data.matrix.cases.length} cases` }),
+      el("span", { text: `${data.matrix.repeats} repeat${data.matrix.repeats === 1 ? "" : "s"}` }),
+      el("span", { text: `${tasks.length} agents` }),
+    ].forEach((node) => node && meta.appendChild(node));
+  }
+
+  function sectionHead(title, text) {
+    return el("div", { class: "section-head" }, [el("h2", { text: title }), text ? el("p", { text }) : null]);
+  }
+
+  function renderModels() {
+    const cards = models.map((model) => {
+      const total = totals[model] || {};
+      const profile = profiles[model];
+      const failed = total.failed_calls || 0;
+      const perPass = total.total_cost === null || total.total_cost === undefined ? null : total.total_cost / data.matrix.repeats;
+      return el("article", { class: "model-card" }, [
+        el("div", {}, [
+          el("div", { class: "model-name" }, [el("span", { class: "swatch", style: `background:${seriesColor(model)}` }), model]),
+          profile ? el("div", { class: "model-id mono", text: `${profile.provider} · ${profile.model_id}` }) : null,
+        ]),
+        el("dl", { class: "model-stats" }, [
+          el("div", {}, [el("dt", { text: "Cost per full pass" }), el("dd", { text: format("cost", perPass, []) })]),
+          el("div", {}, [el("dt", { text: "Total cost" }), el("dd", { text: format("cost", total.total_cost, []) })]),
+          el("div", {}, [el("dt", { text: "Time waiting on model" }), el("dd", { text: format("seconds", total.llm_seconds, []) })]),
+          el("div", {}, [el("dt", { text: "Agent calls" }), el("dd", { text: format("calls", total.calls, []) })]),
+        ]),
+        el("div", {}, [failed
+          ? el("span", { class: "pill critical" }, [el("span", { class: "icon", "aria-hidden": "true", text: "!" }), `${failed} failed call${failed === 1 ? "" : "s"}`])
+          : el("span", { class: "pill good" }, [el("span", { class: "icon", "aria-hidden": "true", text: "✓" }), "No failed calls"])]),
+      ]);
+    });
+    return el("section", { class: "section" }, [
+      sectionHead("Models", "A full pass is every agent over every case once. Costs use the prices listed at the bottom."),
+      el("div", { class: "models" }, cards),
+    ]);
+  }
+
+  function heatStep(value) { return Math.max(0, Math.min(6, Math.floor(value * 7 - 1e-9))); }
+
+  const GUIDE = [
+    ["Precision", "Of everything the model flagged, how much was real. Think of a smoke alarm: high precision means it rarely goes off for burnt toast."],
+    ["Recall", "Of everything that is really there, how much the model flagged. High recall means the alarm never misses a real fire."],
+    ["F1", "One score that combines precision and recall. It is only high when the model catches the real problems and avoids false alarms."],
+    ["Accuracy", "The share of items the model answered exactly right, such as giving an env var the right sensitivity level."],
+    ["Consistency", "Every test runs several times. This shows how often the model gave the same answer each time."],
+    ["Cost per run", "Dollars spent each time an agent runs, at the prices listed at the bottom. A full pass runs every agent on every case once."],
+    ["Time per run", "How long one agent run took. Slow models make every security scan slower."],
+    ["Tokens", "Models read and write text in small pieces called tokens, roughly three quarters of a word each. Providers charge per token."],
+    ["Failed calls", "Requests where the model returned an error or ran out of allowed steps. A failed run counts as a wrong answer."],
+  ];
+
+  function renderGuide() {
+    return el("section", { class: "section" }, [
+      sectionHead("How to read the numbers", "A quick guide for readers who don't work with model evaluations every day."),
+      el("div", { class: "guide" }, [
+        el("p", { class: "rule", text: "For every percentage on this page, higher is better. For cost and time, lower is better. Every metric also has a one-line explanation where it appears." }),
+        el("dl", {}, GUIDE.map(([term, meaning]) => el("div", {}, [el("dt", { text: term }), el("dd", { text: meaning })]))),
+      ]),
+    ]);
+  }
+
+  function renderLeaderboard() {
+    const header = el("tr", {}, [el("th", { text: "Agent" }), ...models.map((model) => el("th", {}, [
+      el("span", { class: "legend" }, [el("span", {}, [el("span", { class: "swatch", style: `background:${seriesColor(model)}` }), model])]),
+    ]))]);
+    const body = tasks.map((task) => {
+      const info = data.tasks[task];
+      const values = models.map((model) => (row(model, task) || {})[info.primary_metric]);
+      const best = Math.max(...values.filter((value) => typeof value === "number"));
+      return el("tr", {}, [
+        el("td", { class: "agent-cell" }, [
+          el("div", { text: agentName(task) }),
+          el("div", { class: "desc", text: `${humanize(info.primary_metric)} · ${coverageText(task).toLowerCase()} · ${info.description}` }),
+        ]),
+        ...models.map((model, index) => {
+          const summary = row(model, task);
+          const value = values[index];
+          if (!summary) return el("td", {}, [el("div", { class: "heat" }, [el("span", { class: "value", text: "–" }), el("span", { class: "sub", text: "not run" })])]);
+          const step = typeof value === "number" ? heatStep(value) : null;
+          const style = step === null ? "" : `background:var(--heat-${step});color:var(--heat-fg-${step})`;
+          return el("td", {}, [el("div", { class: "heat", style }, [
+            el("span", { class: "value", text: format(info.primary_metric, value, info.percent_metrics) + (value === best && models.length > 1 ? "  ▲" : "") }),
+            el("span", { class: "sub", text: `${format("cost", summary.cost_per_run, [])} · ${format("seconds", summary.seconds_per_run, [])} per run` }),
+          ])]);
+        }),
+      ]);
+    });
+    const ramp = el("span", { class: "ramp", "aria-hidden": "true" }, [0, 1, 2, 3, 4, 5, 6].map((step) => el("span", { style: `background:var(--heat-${step})` })));
+    return el("section", { class: "section" }, [
+      sectionHead("Leaderboard", "Each cell shows the agent's primary metric over all cases and repeats, with average cost and wall time per agent run. ▲ marks the best model for that agent."),
+      el("div", { class: "table-wrap" }, [el("table", {}, [el("thead", {}, [header]), el("tbody", {}, body)])]),
+      el("div", { class: "heat-legend" }, [el("span", { text: "0%" }), ramp, el("span", { text: "100%" })]),
+    ]);
+  }
+
+  function legend() {
+    return el("div", { class: "legend" }, models.map((model) => el("span", {}, [
+      el("span", { class: "swatch", style: `background:${seriesColor(model)}` }), model,
+    ])));
+  }
+
+  function renderQualityBars(task) {
+    const info = data.tasks[task];
+    const groups = info.percent_metrics.map((metric) => el("div", { class: "bar-group" }, [
+      el("div", { class: "bar-group-label", text: humanize(metric) }),
+      metricHelp(task, metric) ? el("div", { class: "bar-group-help", text: metricHelp(task, metric) }) : null,
+      ...models.map((model) => {
+        const value = (row(model, task) || {})[metric];
+        const hasValue = typeof value === "number";
+        const bar = hasValue
+          ? el("div", { class: "bar", tabindex: "0", role: "img", "aria-label": `${model} ${humanize(metric)} ${formatPercent(value)}`,
+            style: `width:${Math.max(0, Math.min(100, value * 100))}%;background:${seriesColor(model)}` })
+          : null;
+        if (bar) attachTooltip(bar, (node) => showTooltip(node, formatPercent(value), seriesColor(model), model, humanize(metric)));
+        return el("div", { class: "bar-row" }, [
+          el("div", { class: "bar-track" }, [bar]),
+          el("div", { class: "bar-value", text: hasValue ? formatPercent(value) : "n/a" }),
+        ]);
+      }),
+    ]));
+    return el("div", { class: "panel" }, [
+      el("div", { class: "panel-head" }, [el("h3", { text: "Quality" }), legend()]),
+      el("div", { class: "bars" }, groups),
+      el("div", { class: "bar-axis" }, [el("div", {}, [el("span", { text: "0%" }), el("span", { text: "50%" }), el("span", { text: "100%" })]), el("span")]),
+    ]);
+  }
+
+  function niceLinearTicks(max) {
+    const rough = max / 4;
+    const power = Math.pow(10, Math.floor(Math.log10(rough)));
+    const step = [1, 2, 2.5, 5, 10].map((factor) => factor * power).find((candidate) => candidate >= rough);
+    const ticks = [];
+    for (let tick = 0; tick <= max + step * 0.001; tick += step) ticks.push(tick);
+    return ticks;
+  }
+
+  function logTicks(min, max) {
+    const ticks = [];
+    for (let power = Math.floor(Math.log10(min)); power <= Math.ceil(Math.log10(max)); power += 1) {
+      [1, 2, 5].forEach((factor) => {
+        const tick = factor * Math.pow(10, power);
+        if (tick >= min && tick <= max) ticks.push(tick);
+      });
+    }
+    return ticks;
+  }
+
+  function renderScatter(container, note, task, xMetric) {
+    const info = data.tasks[task];
+    const yMetric = info.primary_metric;
+    const points = models.map((model) => ({ model, summary: row(model, task) }))
+      .filter((point) => point.summary)
+      .map((point) => ({ ...point, x: point.summary[xMetric], y: point.summary[yMetric] }));
+    const plotted = points.filter((point) => typeof point.x === "number" && point.x > 0 && typeof point.y === "number");
+    const skipped = points.filter((point) => !plotted.includes(point)).map((point) => point.model);
+    note.textContent = skipped.length ? `Not plotted (no ${xMetric.includes("cost") ? "price" : "value"}): ${skipped.join(", ")}.` : "";
+    container.replaceChildren();
+    if (!plotted.length) {
+      container.appendChild(el("p", { class: "plot-note", text: "Nothing to plot for this agent yet." }));
+      return;
+    }
+
+    const width = Math.max(300, container.clientWidth);
+    const margin = { top: 16, right: 24, bottom: 40, left: 46 };
+    const innerWidth = width - margin.left - margin.right;
+    const innerHeight = PLOT_HEIGHT - margin.top - margin.bottom;
+    const xs = plotted.map((point) => point.x);
+    const xMin = Math.min(...xs);
+    const xMax = Math.max(...xs);
+    const useLog = xMin > 0 && xMax / xMin > 8;
+    let xScale;
+    let xTicks;
+    if (useLog) {
+      const lo = Math.pow(10, Math.floor(Math.log10(xMin)));
+      const hi = Math.pow(10, Math.ceil(Math.log10(xMax)));
+      xScale = (value) => ((Math.log10(value) - Math.log10(lo)) / (Math.log10(hi) - Math.log10(lo))) * innerWidth;
+      xTicks = logTicks(lo, hi);
+    } else {
+      const ticks = niceLinearTicks(xMax * 1.15);
+      const hi = ticks[ticks.length - 1];
+      xScale = (value) => (value / hi) * innerWidth;
+      xTicks = ticks;
+    }
+    const yScale = (value) => innerHeight - value * innerHeight;
+
+    const svg = svgEl("svg", { viewBox: `0 0 ${width} ${PLOT_HEIGHT}`, role: "img",
+      "aria-label": `${humanize(yMetric)} against ${humanize(xMetric)} per model` });
+    const plot = svgEl("g", { transform: `translate(${margin.left},${margin.top})` });
+    svg.appendChild(plot);
+
+    [0, 0.25, 0.5, 0.75, 1].forEach((tick) => {
+      const y = yScale(tick);
+      plot.appendChild(svgEl("line", { x1: 0, x2: innerWidth, y1: y, y2: y, stroke: "var(--grid)", "stroke-width": 1 }));
+      const label = svgEl("text", { x: -8, y: y + 4, "text-anchor": "end", "font-size": 11.5, fill: "var(--muted)" });
+      label.textContent = Math.round(tick * 100) + "%";
+      plot.appendChild(label);
+    });
+    xTicks.forEach((tick) => {
+      const x = xScale(tick);
+      plot.appendChild(svgEl("line", { x1: x, x2: x, y1: innerHeight, y2: innerHeight + 4, stroke: "var(--axis)", "stroke-width": 1 }));
+      const label = svgEl("text", { x, y: innerHeight + 17, "text-anchor": "middle", "font-size": 11.5, fill: "var(--muted)" });
+      label.textContent = xMetric.includes("cost") ? formatCost(tick) : formatSeconds(tick);
+      plot.appendChild(label);
+    });
+    plot.appendChild(svgEl("line", { x1: 0, x2: innerWidth, y1: innerHeight, y2: innerHeight, stroke: "var(--axis)", "stroke-width": 1 }));
+    const xTitle = svgEl("text", { x: innerWidth / 2, y: innerHeight + 34, "text-anchor": "middle", "font-size": 12, fill: "var(--ink-2)" });
+    xTitle.textContent = humanize(xMetric) + (useLog ? " (log scale)" : "");
+    plot.appendChild(xTitle);
+
+    plotted.forEach((point) => {
+      const cx = xScale(point.x);
+      const cy = yScale(point.y);
+      const group = svgEl("g", { tabindex: "0", role: "img",
+        "aria-label": `${point.model}: ${format(yMetric, point.y, info.percent_metrics)} at ${format(xMetric, point.x, [])}` });
+      group.appendChild(svgEl("circle", { cx, cy, r: 14, fill: "transparent" }));
+      group.appendChild(svgEl("circle", { cx, cy, r: 6, fill: seriesColor(point.model), stroke: "var(--surface)", "stroke-width": 2 }));
+      const nearRight = cx > innerWidth - 110;
+      const label = svgEl("text", { x: nearRight ? cx - 11 : cx + 11, y: cy + 4, "text-anchor": nearRight ? "end" : "start", "font-size": 12, fill: "var(--ink-2)" });
+      label.textContent = point.model;
+      group.appendChild(label);
+      attachTooltip(group, (node) => showTooltip(node, format(yMetric, point.y, info.percent_metrics), seriesColor(point.model), point.model,
+        `${humanize(yMetric)} at ${format(xMetric, point.x, [])} ${humanize(xMetric).toLowerCase()}`));
+      plot.appendChild(group);
+    });
+    container.appendChild(svg);
+  }
+
+  function renderTradeoff(task) {
+    const container = el("div", { class: "plot" });
+    const note = el("p", { class: "plot-note" });
+    let xMetric = "cost_per_run";
+    const buttons = [["cost_per_run", "Cost"], ["seconds_per_run", "Time"]].map(([metric, label]) => {
+      const button = el("button", { type: "button", "aria-pressed": metric === xMetric ? "true" : "false", text: label });
+      button.addEventListener("click", () => {
+        xMetric = metric;
+        buttons.forEach((other) => other.setAttribute("aria-pressed", other === button ? "true" : "false"));
+        renderScatter(container, note, task, xMetric);
+      });
+      return button;
+    });
+    const panel = el("div", { class: "panel" }, [
+      el("div", { class: "panel-head" }, [
+        el("h3", { text: `${humanize(data.tasks[task].primary_metric)} vs cost and time` }),
+        el("div", { class: "segmented", role: "group", "aria-label": "Horizontal axis" }, buttons),
+      ]),
+      container,
+      note,
+    ]);
+    requestAnimationFrame(() => renderScatter(container, note, task, xMetric));
+    new ResizeObserver(() => { if (container.isConnected) renderScatter(container, note, task, xMetric); }).observe(panel);
+    return panel;
+  }
+
+  function numbersTable(task) {
+    const info = data.tasks[task];
+    const metrics = [...info.metrics, ...data.usage_metrics];
+    const header = el("tr", {}, [el("th", { text: "Metric" }), ...models.map((model) => el("th", { class: "num", text: model }))]);
+    const body = metrics.map((metric) => el("tr", {}, [
+      el("td", {}, [
+        el("div", { text: humanize(metric) }),
+        metricHelp(task, metric) ? el("div", { class: "metric-help", text: metricHelp(task, metric) }) : null,
+      ]),
+      ...models.map((model) => el("td", { class: "num", text: format(metric, (row(model, task) || {})[metric], info.percent_metrics) })),
+    ]));
+    return el("div", { class: "table-wrap" }, [el("table", {}, [el("thead", {}, [header]), el("tbody", {}, body)])]);
+  }
+
+  function perCaseTable(task) {
+    const info = data.tasks[task];
+    const ran = casesRun(task);
+    const header = el("tr", {}, [el("th", { text: "Case" }), ...models.map((model) => el("th", { class: "num", text: model }))]);
+    const body = data.matrix.cases.map((caseName) => el("tr", {}, ran.includes(caseName) ? [
+      el("td", { class: "mono", text: caseName }),
+      ...models.map((model) => {
+        const summary = row(model, task, caseName);
+        return el("td", { class: "num", text: summary
+          ? `${format(info.primary_metric, summary[info.primary_metric], info.percent_metrics)} · ${format("cost", summary.cost_per_run, [])}`
+          : "–" });
+      }),
+    ] : [
+      el("td", { class: "mono muted", text: caseName }),
+      el("td", { class: "muted", colspan: String(models.length), text: "Not run: this case has nothing for this agent to check" }),
+    ]));
+    return el("div", { class: "section" }, [
+      el("h3", { text: `${humanize(info.primary_metric)} and cost per run, by case` }),
+      el("p", { class: "secondary", text: `Each agent only runs on cases that contain its kind of input, so this agent ran on ${ran.length} of ${data.matrix.cases.length} cases.` }),
+      el("div", { class: "table-wrap" }, [el("table", {}, [el("thead", {}, [header]), el("tbody", {}, body)])]),
+    ]);
+  }
+
+  function renderAgent(task) {
+    const info = data.tasks[task];
+    const agent = agents[task];
+    return el("div", { class: "agent", id: `agent-${task}`, role: "tabpanel" }, [
+      el("div", { class: "agent-head" }, [
+        el("h2", { text: agentName(task) }),
+        el("p", { class: "secondary", text: info.description }),
+        el("div", { class: "chips" }, [
+          el("span", { class: "pill", text: `Primary metric: ${humanize(info.primary_metric)}` }),
+          el("span", { class: "pill", text: coverageText(task) }),
+          agent ? el("span", { class: "pill" }, ["Prompt ", el("span", { class: "mono", text: agent.prompt_fingerprint })]) : null,
+        ]),
+        agent ? el("details", { class: "instructions" }, [el("summary", { text: "Agent instructions used in this run" }), el("pre", { text: agent.instructions.trim() })]) : null,
+      ]),
+      el("div", { class: "panels" }, [renderQualityBars(task), renderTradeoff(task)]),
+      el("div", { class: "section" }, [el("h3", { text: "All numbers" }), numbersTable(task)]),
+      perCaseTable(task),
+    ]);
+  }
+
+  function renderAgents() {
+    const holder = el("div");
+    const initial = tasks.includes(location.hash.slice(1)) ? location.hash.slice(1) : tasks[0];
+    const tabs = tasks.map((task) => {
+      const tab = el("button", { class: "tab", type: "button", role: "tab", id: `tab-${task}`, "aria-controls": `agent-${task}`,
+        "aria-selected": task === initial ? "true" : "false", text: agentName(task) });
+      tab.addEventListener("click", () => select(task));
+      return tab;
+    });
+    function select(task) {
+      tabs.forEach((tab) => tab.setAttribute("aria-selected", tab.id === `tab-${task}` ? "true" : "false"));
+      hideTooltip();
+      holder.replaceChildren(renderAgent(task));
+      try { history.replaceState(null, "", "#" + task); } catch (error) { /* hash updates are optional */ }
+    }
+    select(initial);
+    return el("section", { class: "section" }, [
+      sectionHead("Agents", "Choose an agent to compare models on every quality metric, cost, tokens and latency. Each agent only runs on the cases that contain its kind of input."),
+      el("div", { class: "tabs", role: "tablist", "aria-label": "Agents" }, tabs),
+      holder,
+    ]);
+  }
+
+  function renderPricing() {
+    const fields = [["input", "Input"], ["cached_input", "Cached input"], ["cache_write", "Cache write"], ["output", "Output"]];
+    const header = el("tr", {}, [el("th", { text: "Model" }), ...fields.map(([, label]) => el("th", { class: "num", text: label }))]);
+    const body = models.map((model) => {
+      const price = data.pricing.models[model];
+      return el("tr", {}, [
+        el("td", {}, [el("span", { class: "legend" }, [el("span", {}, [el("span", { class: "swatch", style: `background:${seriesColor(model)}` }), model])])]),
+        ...fields.map(([field]) => el("td", { class: "num", text: price && typeof price[field] === "number" ? formatPrice(price[field]) : "n/a" })),
+      ]);
+    });
+    const sources = (data.pricing.sources || []).map((source) => el("li", {}, [el("a", { href: source, target: "_blank", rel: "noopener", text: source })]));
+    return el("section", { class: "section" }, [
+      sectionHead("Prices and method", `USD per million tokens${data.pricing.checked_on ? ", checked " + data.pricing.checked_on : ""}.`),
+      el("div", { class: "table-wrap" }, [el("table", {}, [el("thead", {}, [header]), el("tbody", {}, body)])]),
+      el("ul", { class: "notes" }, [
+        el("li", { text: "Only the LLM agents are scored. Each agent gets the input the production code builds, and its output is compared with hand-checked labels." }),
+        el("li", { text: "Ratios are pooled over all cases and repeats before dividing. Failed runs count as empty answers, and their tokens still count toward cost." }),
+        el("li", { text: "Consistency is the share of repeats that agree with the majority answer for each labeled item. It needs at least two repeats." }),
+        el("li", { text: "Token counts come from each provider and are not comparable across providers, because tokenizers differ. Compare cost and time instead." }),
+        el("li", { text: "A changed prompt fingerprint means that agent's instructions changed between runs." }),
+        ...sources,
+      ]),
+    ]);
+  }
+
+  renderRunMeta();
+  content.append(renderModels(), renderGuide(), renderLeaderboard(), renderAgents(), renderPricing());
+})();
+</script>

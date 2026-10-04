@@ -1,0 +1,13 @@
+_id: syn1-fn-support
+name: Support-Desk
+language: javascript
+timeout: 60
+triggers:
+  addSupportAgent:
+    type: http
+    active: true
+    options:
+      method: Post
+      path: /support/agents
+      preflight: true
+      authorize: true

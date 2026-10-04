@@ -1,0 +1,11 @@
+_id: syn1-fn-audit
+name: User-Audit
+language: javascript
+timeout: 60
+triggers:
+  auditPrivilegedUsers:
+    type: schedule
+    active: true
+    options:
+      frequency: 0 * * * *
+      timezone: UTC

@@ -1,0 +1,27 @@
+_id: syn3-bkt-config
+title: App Configuration
+description: App Configuration records
+icon: view_stream
+primary: key
+readOnly: false
+history: false
+properties:
+  key:
+    type: string
+    title: key
+    options: {}
+  value:
+    type: string
+    title: value
+    options: {}
+  version:
+    type: string
+    title: version
+    options: {}
+  in_use:
+    type: string
+    title: in_use
+    options: {}
+acl:
+  read: true==true
+  write: auth.attributes.role == 'admin'

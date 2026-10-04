@@ -1,0 +1,27 @@
+_id: syn3-bkt-tickets
+title: Support Tickets
+description: Support Tickets records
+icon: view_stream
+primary: subject
+readOnly: false
+history: false
+properties:
+  subject:
+    type: string
+    title: subject
+    options: {}
+  message:
+    type: string
+    title: message
+    options: {}
+  email:
+    type: string
+    title: email
+    options: {}
+  created_by:
+    type: string
+    title: created_by
+    options: {}
+acl:
+  read: document.created_by == auth._id || auth.attributes.role == 'support'
+  write: document.created_by == auth._id && auth.attributes.verified == true

@@ -1,0 +1,27 @@
+_id: syn3-bkt-profiles
+title: Customer Profiles
+description: Customer Profiles records
+icon: view_stream
+primary: full_name
+readOnly: false
+history: false
+properties:
+  full_name:
+    type: string
+    title: full_name
+    options: {}
+  email:
+    type: string
+    title: email
+    options: {}
+  phone:
+    type: string
+    title: phone
+    options: {}
+  owner:
+    type: string
+    title: owner
+    options: {}
+acl:
+  read: auth._id == document.owner
+  write: auth._id == document.owner

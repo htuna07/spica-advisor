@@ -1,0 +1,21 @@
+_id: syn2-fn-admin
+name: Admin-Tools
+language: javascript
+timeout: 60
+triggers:
+  purgeCache:
+    type: http
+    active: true
+    options:
+      method: Post
+      path: /admin/cache/purge
+      preflight: true
+      authorize: false
+  deleteUser:
+    type: http
+    active: true
+    options:
+      method: Delete
+      path: /admin/users
+      preflight: true
+      authorize: false

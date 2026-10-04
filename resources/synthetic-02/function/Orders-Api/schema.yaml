@@ -1,0 +1,29 @@
+_id: syn2-fn-orders
+name: Orders-Api
+language: javascript
+timeout: 60
+triggers:
+  createOrder:
+    type: http
+    active: true
+    options:
+      method: Post
+      path: /orders
+      preflight: true
+      authorize: false
+  getOrder:
+    type: http
+    active: true
+    options:
+      method: Get
+      path: /orders
+      preflight: true
+      authorize: false
+  cancelOrder:
+    type: http
+    active: true
+    options:
+      method: Post
+      path: /orders/cancel
+      preflight: true
+      authorize: false

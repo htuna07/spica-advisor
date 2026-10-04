@@ -1,0 +1,831 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Spica Advisor Eval Cases</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<style>
+/* Layout: case list beside the selected case's editor (labels, then resources), run panel and run history below. */
+:root {
+  --bg: #f4f5f7; --surface: #ffffff; --surface-2: #f8f9fa;
+  --ink: #11161c; --ink-2: #4b535d; --muted: #7a828c;
+  --grid: #e4e7eb; --axis: #c4cad1; --border: rgba(17, 22, 28, 0.11);
+  --focus: #2a78d6; --accent: #1f5fbf; --accent-ink: #ffffff;
+  --critical: #c53030; --good-text: #006300; --warning-text: #8a5a00;
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --radius: 10px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c0e11; --surface: #15181c; --surface-2: #1b1f24;
+    --ink: #f1f3f5; --ink-2: #b8bfc7; --muted: #8a929b;
+    --grid: #262b31; --axis: #3b4249; --border: rgba(255, 255, 255, 0.10);
+    --focus: #3987e5; --accent: #3987e5; --accent-ink: #0c0e11;
+    --critical: #e06060; --good-text: #0ca30c; --warning-text: #e0a33a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c0e11; --surface: #15181c; --surface-2: #1b1f24;
+  --ink: #f1f3f5; --ink-2: #b8bfc7; --muted: #8a929b;
+  --grid: #262b31; --axis: #3b4249; --border: rgba(255, 255, 255, 0.10);
+  --focus: #3987e5; --accent: #3987e5; --accent-ink: #0c0e11;
+  --critical: #e06060; --good-text: #0ca30c; --warning-text: #e0a33a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-sans); font-size: 15px; line-height: 1.5;
+  padding-inline: 16px; padding-block: calc(28px + env(safe-area-inset-top, 0px)) calc(56px + env(safe-area-inset-bottom, 0px));
+}
+.page { max-width: 1180px; margin-inline: auto; display: grid; gap: 28px; }
+.page > * { min-width: 0; }
+h1, h2, h3 { margin: 0; font-weight: 600; text-wrap: balance; }
+h1 { font-size: clamp(26px, 4vw, 34px); letter-spacing: -0.01em; line-height: 1.15; }
+h2 { font-size: 19px; }
+h3 { font-size: 15px; }
+p { margin: 0; }
+a { color: var(--accent); }
+.eyebrow { font-size: 12px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.mono { font-family: var(--font-mono); font-size: 0.92em; }
+.muted { color: var(--muted); }
+.secondary { color: var(--ink-2); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+header.top { display: grid; gap: 8px; }
+header.top .row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px 16px; }
+.lede { color: var(--ink-2); max-width: 75ch; }
+
+.banner { border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius); padding: 12px 14px; color: var(--ink-2); font-size: 14px; }
+.banner strong { color: var(--ink); }
+
+.workspace { display: grid; grid-template-columns: minmax(200px, 260px) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 820px) { .workspace { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: grid; gap: 14px; min-width: 0; }
+.panel > * { min-width: 0; }
+
+.case-list { display: grid; gap: 4px; }
+.case-button {
+  appearance: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
+  border: 1px solid transparent; background: none; border-radius: 8px; padding: 8px 10px; font: inherit; text-align: left;
+  color: var(--ink); cursor: pointer;
+}
+.case-button:hover { background: var(--surface-2); }
+.case-button[aria-current="true"] { background: var(--surface-2); border-color: var(--border); font-weight: 600; }
+.case-button .name { font-family: var(--font-mono); font-size: 13.5px; overflow-wrap: anywhere; }
+.chip { font-size: 11.5px; font-weight: 500; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--ink-2); white-space: nowrap; background: var(--surface); }
+.chip.real { color: var(--accent); }
+.chip.dirty { color: var(--warning-text); border-color: color-mix(in srgb, var(--warning-text) 40%, transparent); }
+.chip.ok { color: var(--good-text); border-color: color-mix(in srgb, var(--good-text) 40%, transparent); }
+.chip.bad { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 40%, transparent); }
+
+.new-case { display: grid; gap: 8px; border-top: 1px solid var(--grid); padding-top: 12px; }
+.field { display: grid; gap: 4px; }
+.field label, .field .label { font-size: 12.5px; color: var(--muted); }
+input[type="text"], select, textarea {
+  font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--border); border-radius: 7px;
+  padding: 7px 9px; width: 100%;
+}
+textarea { font-family: var(--font-mono); font-size: 13px; line-height: 1.55; resize: vertical; tab-size: 2; }
+input:disabled, textarea:disabled, select:disabled { opacity: 0.7; }
+.inline { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.inline > input[type="text"] { flex: 1 1 160px; width: auto; }
+
+.button {
+  appearance: none; font: inherit; font-size: 14px; font-weight: 500; border-radius: 8px; padding: 7px 14px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink);
+}
+.button:hover:not(:disabled) { background: var(--surface-2); }
+.button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.button.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); }
+.button.danger { color: var(--critical); }
+.button:disabled { cursor: not-allowed; opacity: 0.55; }
+.button.small { font-size: 13px; padding: 4px 10px; }
+
+.editor-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; }
+.editor-head .title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.editor-head h2 { font-family: var(--font-mono); font-size: 18px; font-weight: 500; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; color: var(--critical); }
+
+.labels { display: grid; gap: 16px; }
+.label-block { display: grid; gap: 6px; }
+.label-block .head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px; }
+.label-block .help { font-size: 13px; color: var(--ink-2); max-width: 80ch; }
+.status { font-size: 12.5px; }
+.status.ok { color: var(--good-text); }
+.status.bad { color: var(--critical); }
+
+.resources { display: grid; grid-template-columns: minmax(180px, 240px) minmax(0, 1fr); gap: 12px; align-items: start; }
+@media (max-width: 680px) { .resources { grid-template-columns: minmax(0, 1fr); } }
+.file-list { display: grid; gap: 2px; max-height: 420px; overflow: auto; }
+.file-button { appearance: none; border: 0; background: none; text-align: left; font-family: var(--font-mono); font-size: 12.5px; padding: 5px 8px; border-radius: 6px; color: var(--ink-2); cursor: pointer; overflow-wrap: anywhere; }
+.file-button:hover { background: var(--surface-2); color: var(--ink); }
+.file-button[aria-current="true"] { background: var(--surface-2); color: var(--ink); font-weight: 500; }
+.file-editor { display: grid; gap: 8px; min-width: 0; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--grid); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th { font-size: 12px; font-weight: 500; color: var(--muted); background: var(--surface-2); white-space: nowrap; }
+td.mono { white-space: nowrap; }
+
+.run-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 14px 20px; }
+fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 4px; min-width: 0; }
+legend { font-size: 12.5px; color: var(--muted); padding: 0; margin-bottom: 4px; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.check span { overflow-wrap: anywhere; }
+.estimate { font-size: 15px; }
+.estimate strong { font-size: 20px; }
+.run-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid var(--grid); padding-top: 14px; }
+.reason { font-size: 13.5px; color: var(--ink-2); max-width: 70ch; }
+
+.runs { display: grid; gap: 8px; }
+.run-item { display: grid; gap: 4px; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--surface); }
+.run-item .row { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.run-item ul { margin: 4px 0 0; padding-left: 18px; font-size: 13px; color: var(--ink-2); }
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 1px 9px; border-radius: 999px; border: 1px solid var(--border); }
+.pill.requested, .pill.validating, .pill.running { color: var(--accent); }
+.pill.done { color: var(--good-text); }
+.pill.invalid, .pill.failed { color: var(--critical); }
+.empty { color: var(--ink-2); font-size: 14px; }
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 5;
+  background: var(--ink); color: var(--bg); border-radius: 8px; padding: 9px 14px; font-size: 14px; max-width: min(92vw, 560px);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18);
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main class="page">
+  <header class="top">
+    <span class="eyebrow">Spica Advisor · agent evals</span>
+    <div class="row">
+      <h1>Eval cases</h1>
+      <a href="./">Benchmark report</a>
+    </div>
+    <p class="lede">Every case pairs project resources (the agents' input) with labels (the answers each agent should give). Edit them here, then run the benchmark at the bottom; Claude copies your changes into the repo, checks them, runs the models and updates the report.</p>
+  </header>
+  <div id="banner" class="banner" hidden></div>
+  <section class="workspace">
+    <aside class="panel" aria-label="Cases">
+      <h2>Cases</h2>
+      <div id="case-list" class="case-list"></div>
+      <div id="new-case" class="new-case"></div>
+    </aside>
+    <div id="editor" class="panel"></div>
+  </section>
+  <section class="panel" aria-labelledby="run-title">
+    <h2 id="run-title">Run the benchmark</h2>
+    <div id="run-panel"></div>
+  </section>
+  <section class="panel" aria-labelledby="history-title">
+    <h2 id="history-title">Recent runs</h2>
+    <div id="run-history" class="runs"></div>
+  </section>
+</main>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<script id="cases-data" type="application/json">__CASES_PAGE_DATA__</script>
+<script>
+(function () {
+  const CASE_NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
+  const RESOURCE_PATH = /^(function|bucket|policy|env-var)\/[^.\/][^\/]*(\/[^\/]+)*\.(yaml|mjs|js|ts)$/;
+  const LABEL_SHAPES = {
+    "sensitive-env-vars.yaml": "mapping",
+    "unauthenticated-endpoints.yaml": "mapping",
+    "policy-attachments.yaml": "list",
+    "bucket-acl.yaml": "mapping",
+  };
+  const EMPTY_LABELS = {
+    "sensitive-env-vars.yaml": "{}\n",
+    "unauthenticated-endpoints.yaml": "{}\n",
+    "policy-attachments.yaml": "[]\n",
+    "bucket-acl.yaml": "{}\n",
+  };
+  const ACTIVE_RUN = ["requested", "validating", "running"];
+
+  let config = null;
+  try { config = JSON.parse(document.getElementById("cases-data").textContent); } catch (error) { config = null; }
+
+  const state = {
+    db: null, comments: null, canWrite: false, connected: false, loaded: false,
+    saved: new Map(), drafts: new Map(), selected: null, selectedFile: null,
+    confirmingDelete: false, adding: null, runs: [], claudeStatus: "unknown", sending: false,
+    run: null,
+  };
+
+  function el(tag, attrs, children) {
+    const node = document.createElement(tag);
+    Object.entries(attrs || {}).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === false) return;
+      if (key === "class") node.className = value;
+      else if (key === "text") node.textContent = value;
+      else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+      else node.setAttribute(key, value === true ? "" : value);
+    });
+    (children || []).forEach((child) => {
+      if (child === null || child === undefined || child === false) return;
+      node.appendChild(typeof child === "string" ? document.createTextNode(child) : child);
+    });
+    return node;
+  }
+
+  function humanize(name) {
+    const text = String(name).replace(/\.yaml$/, "").replace(/[-_]/g, " ").replace(/\bacl\b/i, "ACL");
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+  function clone(value) { return JSON.parse(JSON.stringify(value)); }
+  function caseNames() { return [...new Set([...state.saved.keys(), ...state.drafts.keys()])].sort(); }
+  function current(name) { return state.drafts.get(name) || state.saved.get(name); }
+  function isDirty(name) {
+    const draft = state.drafts.get(name);
+    if (!draft) return false;
+    const saved = state.saved.get(name);
+    return !saved || JSON.stringify(draft) !== JSON.stringify(saved);
+  }
+  function anyDirty() { return [...state.drafts.keys()].some(isDirty); }
+  function draftFor(name) {
+    if (!state.drafts.has(name)) state.drafts.set(name, clone(state.saved.get(name)));
+    return state.drafts.get(name);
+  }
+
+  let toastTimer = null;
+  function toast(message) {
+    const node = document.getElementById("toast");
+    node.textContent = message;
+    node.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { node.hidden = true; }, 5000);
+  }
+
+  function labelStatus(file, text) {
+    if (!text.trim()) return { ok: true, message: "Empty" };
+    if (!window.jsyaml) return { ok: true, message: "Not checked here; Claude checks it before running" };
+    let value;
+    try { value = window.jsyaml.load(text); } catch (error) { return { ok: false, message: `YAML error: ${error.reason || error.message}` }; }
+    if (value === null || value === undefined) return { ok: true, message: "Empty" };
+    const wantsList = LABEL_SHAPES[file] === "list";
+    if (wantsList !== Array.isArray(value) || typeof value !== "object") {
+      return { ok: false, message: wantsList ? "Must be a list (lines starting with -)" : "Must be a mapping (key: value lines)" };
+    }
+    const count = wantsList ? value.length : Object.keys(value).length;
+    return { ok: true, message: `Valid YAML · ${count} ${count === 1 ? "entry" : "entries"}` };
+  }
+
+  /* ---------- case list ---------- */
+
+  function renderList() {
+    const list = document.getElementById("case-list");
+    const names = caseNames();
+    if (!state.loaded) {
+      list.replaceChildren(el("p", { class: "empty", text: state.connected ? "Loading cases…" : "Cases appear here when the page is opened on claude.ai." }));
+    } else if (!names.length) {
+      list.replaceChildren(el("p", { class: "empty", text: "No cases yet. Add one below, or ask Claude to load the repo's cases." }));
+    } else {
+      list.replaceChildren(...names.map((name) => {
+        const data = current(name);
+        return el("button", {
+          class: "case-button", type: "button", "aria-current": name === state.selected ? "true" : "false",
+          onclick: () => select(name),
+        }, [
+          el("span", { class: "name", text: name }),
+          el("span", { class: "inline" }, [
+            isDirty(name) ? el("span", { class: "chip dirty", text: "Unsaved" }) : null,
+            el("span", { class: `chip ${data.kind}`, text: data.kind === "real" ? "Real" : "Synthetic" }),
+          ]),
+        ]);
+      }));
+    }
+    renderNewCase();
+  }
+
+  function renderNewCase() {
+    const holder = document.getElementById("new-case");
+    if (!state.connected || !state.canWrite) { holder.replaceChildren(); return; }
+    const name = el("input", { type: "text", id: "new-case-name", placeholder: "synthetic-04", "aria-label": "New case name", autocomplete: "off" });
+    const kind = el("select", { id: "new-case-kind", "aria-label": "Case type" }, [
+      el("option", { value: "synthetic", text: "Synthetic: resources written here" }),
+      el("option", { value: "real", text: "Real: a project export on your machine" }),
+    ]);
+    const error = el("p", { class: "status bad", hidden: true });
+    const add = el("button", { class: "button small", type: "button", text: "Add case", onclick: () => {
+      const value = name.value.trim();
+      const problem = !CASE_NAME.test(value) ? "Use lowercase letters, digits and dashes, starting with a letter or digit."
+        : caseNames().includes(value) ? "A case with this name already exists." : "";
+      if (problem) { error.textContent = problem; error.hidden = false; return; }
+      const draft = { name: value, kind: kind.value, labels: clone(EMPTY_LABELS) };
+      if (kind.value === "synthetic") draft.files = []; else draft.index = {};
+      state.drafts.set(value, draft);
+      select(value);
+    } });
+    holder.replaceChildren(
+      el("h3", { text: "Add a case" }),
+      el("div", { class: "field" }, [el("label", { for: "new-case-name", text: "Name" }), name]),
+      el("div", { class: "field" }, [el("label", { for: "new-case-kind", text: "Type" }), kind]),
+      error,
+      el("div", {}, [add]),
+    );
+  }
+
+  function select(name) {
+    state.selected = name;
+    state.selectedFile = null;
+    state.confirmingDelete = false;
+    state.adding = null;
+    renderList();
+    renderEditor();
+  }
+
+  /* ---------- editor ---------- */
+
+  function renderEditor() {
+    const editor = document.getElementById("editor");
+    const data = state.selected && current(state.selected);
+    if (!data) {
+      editor.replaceChildren(el("p", { class: "empty", text: state.loaded ? "Pick a case on the left, or add a new one." : "Cases load when the page is opened on claude.ai." }));
+      return;
+    }
+    editor.replaceChildren(editorHead(data), labelsSection(data), resourcesSection(data));
+  }
+
+  function editorHead(data) {
+    const name = data.name;
+    const dirty = isDirty(name);
+    const saved = state.saved.has(name);
+    const actions = state.confirmingDelete
+      ? el("div", { class: "confirm" }, [
+        `Delete ${name}? Its labels${data.kind === "synthetic" ? " and resources" : ""} are removed from the repo at the next run (kept in evals/.deleted).`,
+        el("button", { class: "button small danger", type: "button", text: "Delete", onclick: () => deleteCase(name) }),
+        el("button", { class: "button small", type: "button", text: "Keep it", onclick: () => { state.confirmingDelete = false; renderEditor(); } }),
+      ])
+      : el("div", { class: "actions" }, [
+        el("button", { class: "button primary", type: "button", id: "save-case", text: saved ? "Save changes" : "Save case",
+          disabled: !dirty || !state.canWrite, onclick: () => saveCase(name) }),
+        dirty ? el("button", { class: "button", type: "button", text: saved ? "Discard changes" : "Discard case", onclick: () => discard(name) }) : null,
+        saved && state.canWrite ? el("button", { class: "button danger", type: "button", text: "Delete case", onclick: () => { state.confirmingDelete = true; renderEditor(); } }) : null,
+      ]);
+    return el("div", { class: "editor-head", id: "editor-head" }, [
+      el("div", { class: "title" }, [
+        el("h2", { text: name }),
+        el("span", { class: `chip ${data.kind}`, text: data.kind === "real" ? "Real export" : "Synthetic" }),
+        dirty ? el("span", { class: "chip dirty", text: saved ? "Unsaved changes" : "Not saved yet" }) : el("span", { class: "chip ok", text: "Saved" }),
+      ]),
+      actions,
+    ]);
+  }
+
+  function refreshHead() {
+    const head = document.getElementById("editor-head");
+    const data = current(state.selected);
+    if (head && data) head.replaceWith(editorHead(data));
+    renderList();
+    renderRunPanel();
+  }
+
+  function labelsSection(data) {
+    const blocks = Object.entries(config.label_files).map(([task, file]) => {
+      const text = data.labels[file] || "";
+      const status = el("span", { class: "status" });
+      const paint = (value) => {
+        const result = labelStatus(file, value);
+        status.className = `status ${result.ok ? "ok" : "bad"}`;
+        status.textContent = (result.ok ? "✓ " : "! ") + result.message;
+      };
+      paint(text);
+      const area = el("textarea", {
+        id: `label-${file}`, "aria-label": `${humanize(file)} labels`, spellcheck: "false",
+        rows: String(Math.min(18, Math.max(4, text.split("\n").length + 1))), disabled: !state.canWrite,
+      });
+      area.value = text;
+      area.addEventListener("input", () => {
+        draftFor(data.name).labels[file] = area.value;
+        paint(area.value);
+        refreshHead();
+      });
+      return el("div", { class: "label-block" }, [
+        el("div", { class: "head" }, [el("h3", { text: humanize(file) }), status]),
+        el("p", { class: "help", text: config.label_help[file] || "" }),
+        area,
+      ]);
+    });
+    return el("div", { class: "labels" }, [
+      el("h2", { text: "Expected answers" }),
+      ...blocks,
+    ]);
+  }
+
+  function resourcesSection(data) {
+    if (data.kind === "real") return realIndex(data);
+    return el("div", { class: "labels" }, [
+      el("h2", { text: "Resources" }),
+      el("p", { class: "help secondary", text: "The files the agents read. Paths start with function/, bucket/, policy/ or env-var/ and end in .yaml, .mjs, .js or .ts, like a Spica export." }),
+      state.canWrite ? resourceToolbar(data) : null,
+      el("div", { class: "resources" }, [fileList(data), fileEditor(data)]),
+    ]);
+  }
+
+  function validResourcePath(path) {
+    return RESOURCE_PATH.test(path) && !path.split("/").includes("..");
+  }
+
+  function slug(text) { return text.trim().replace(/[^A-Za-z0-9-]+/g, "-").replace(/^-+|-+$/g, ""); }
+
+  const TEMPLATES = {
+    function: (name) => {
+      const id = slug(name).toLowerCase();
+      return [
+        [`function/${slug(name)}/schema.yaml`, `_id: ${id}\nname: ${slug(name)}\nlanguage: javascript\ntriggers:\n  handler:\n    type: http\n    active: true\n    options:\n      method: Get\n      path: /${id}\n      authorize: false\n`],
+        [`function/${slug(name)}/index.mjs`, `export async function handler(req, res) {\n  return res.status(200).send("OK");\n}\n`],
+      ];
+    },
+    bucket: (name) => [[`bucket/${slug(name)}/schema.yaml`, `_id: ${slug(name).toLowerCase()}\ntitle: ${name.trim()}\nproperties:\n  owner:\n    type: string\n    title: owner\nacl:\n  read: auth._id == document.owner\n  write: auth._id == document.owner\n`]],
+    "env var": (name) => [[`env-var/${slug(name).toUpperCase()}/schema.yaml`, `_id: ${slug(name).toLowerCase()}\nkey: ${slug(name).toUpperCase()}\n`]],
+    file: (name) => [[name.trim(), ""]],
+  };
+
+  function resourceToolbar(data) {
+    if (state.adding) {
+      const kind = state.adding;
+      const input = el("input", { type: "text", id: "add-resource-name", autocomplete: "off",
+        placeholder: kind === "file" ? "function/Orders/helpers.mjs" : kind === "env var" ? "STRIPE_API_KEY" : kind === "bucket" ? "Order Items" : "Orders-Api",
+        "aria-label": `New ${kind} name` });
+      const error = el("span", { class: "status bad" });
+      const create = () => {
+        const value = input.value.trim();
+        if (!value) { error.textContent = "Enter a name."; return; }
+        const files = TEMPLATES[kind](value);
+        const draft = draftFor(data.name);
+        const invalid = files.find(([path]) => !validResourcePath(path));
+        if (invalid) { error.textContent = `Not a valid resource path: ${invalid[0]}`; return; }
+        const clash = files.find(([path]) => draft.files.some((file) => file.path === path));
+        if (clash) { error.textContent = `${clash[0]} already exists.`; return; }
+        files.forEach(([path, content]) => draft.files.push({ path, content }));
+        draft.files.sort((a, b) => a.path.localeCompare(b.path));
+        state.selectedFile = files[files.length - 1][0];
+        state.adding = null;
+        renderEditor();
+        refreshHead();
+      };
+      input.addEventListener("keydown", (event) => { if (event.key === "Enter") create(); });
+      setTimeout(() => input.focus(), 0);
+      return el("div", { class: "inline" }, [
+        input,
+        el("button", { class: "button small primary", type: "button", text: `Add ${kind}`, onclick: create }),
+        el("button", { class: "button small", type: "button", text: "Cancel", onclick: () => { state.adding = null; renderEditor(); } }),
+        error,
+      ]);
+    }
+    return el("div", { class: "toolbar" }, Object.keys(TEMPLATES).map((kind) => el("button", {
+      class: "button small", type: "button", text: `Add ${kind}`, onclick: () => { state.adding = kind; renderEditor(); },
+    })));
+  }
+
+  function fileList(data) {
+    const files = data.files || [];
+    if (!files.length) return el("p", { class: "empty", text: "No resource files yet." });
+    return el("div", { class: "file-list", role: "list" }, files.map((file) => el("button", {
+      class: "file-button", type: "button", role: "listitem", "aria-current": file.path === state.selectedFile ? "true" : "false",
+      text: file.path, onclick: () => { state.selectedFile = file.path; renderEditor(); },
+    })));
+  }
+
+  function fileEditor(data) {
+    const file = (data.files || []).find((item) => item.path === state.selectedFile);
+    if (!file) return el("p", { class: "empty", text: "Pick a file to view or edit it." });
+    const pathInput = el("input", { type: "text", id: "resource-path", value: file.path, "aria-label": "File path", disabled: !state.canWrite, spellcheck: "false" });
+    const pathStatus = el("span", { class: "status" });
+    pathInput.addEventListener("change", () => {
+      const value = pathInput.value.trim();
+      const draft = draftFor(data.name);
+      if (!validResourcePath(value) || (value !== file.path && draft.files.some((item) => item.path === value))) {
+        pathStatus.className = "status bad";
+        pathStatus.textContent = "! Not a valid, unused resource path; the old path is kept.";
+        pathInput.value = file.path;
+        return;
+      }
+      draft.files.find((item) => item.path === file.path).path = value;
+      draft.files.sort((a, b) => a.path.localeCompare(b.path));
+      state.selectedFile = value;
+      renderEditor();
+      refreshHead();
+    });
+    const area = el("textarea", { id: "resource-content", "aria-label": `Contents of ${file.path}`, spellcheck: "false",
+      rows: String(Math.min(26, Math.max(8, file.content.split("\n").length + 1))), disabled: !state.canWrite });
+    area.value = file.content;
+    area.addEventListener("input", () => {
+      draftFor(data.name).files.find((item) => item.path === file.path).content = area.value;
+      refreshHead();
+    });
+    return el("div", { class: "file-editor" }, [
+      el("div", { class: "field" }, [el("label", { for: "resource-path", text: "Path" }), pathInput, pathStatus]),
+      area,
+      state.canWrite ? el("div", {}, [el("button", { class: "button small danger", type: "button", text: "Remove file", onclick: () => {
+        const draft = draftFor(data.name);
+        draft.files = draft.files.filter((item) => item.path !== file.path);
+        state.selectedFile = null;
+        renderEditor();
+        refreshHead();
+      } })]) : null,
+    ]);
+  }
+
+  function indexTable(title, headers, rows) {
+    if (!rows.length) return null;
+    return el("div", { class: "label-block" }, [
+      el("h3", { text: title }),
+      el("div", { class: "table-wrap" }, [el("table", {}, [
+        el("thead", {}, [el("tr", {}, headers.map((header) => el("th", { text: header })))]),
+        el("tbody", {}, rows.map((cells) => el("tr", {}, cells.map((cell, index) => el("td", { class: index === 1 ? "mono" : "", text: cell }))))),
+      ])]),
+    ]);
+  }
+
+  function realIndex(data) {
+    const index = data.index || {};
+    const functions = index.functions || [];
+    const empty = !functions.length && !(index.buckets || []).length && !(index.env_vars || []).length;
+    return el("div", { class: "labels" }, [
+      el("h2", { text: "Resources" }),
+      el("p", { class: "help secondary", text: `This case reads the export linked at resources/${data.name} on your machine. Its code and env var values stay there; only names and ids are listed here to help you write labels.` }),
+      empty ? el("p", { class: "empty", text: "No index yet. Claude adds it when it syncs a linked export." }) : null,
+      indexTable("Functions", ["Name", "_id", "Public http triggers"], functions.map((item) => [item.name || "", item._id || "", (item.public_triggers || []).join(", ") || "none"])),
+      indexTable("Buckets", ["Title", "_id"], (index.buckets || []).map((item) => [item.title || "", item._id || ""])),
+      indexTable("Env vars", ["Key"], (index.env_vars || []).map((key) => [key])),
+      indexTable("Policies", ["Name", "_id"], (index.policies || []).map((item) => [item.name || "", item._id || ""])),
+    ]);
+  }
+
+  async function saveCase(name) {
+    const draft = state.drafts.get(name);
+    if (!draft || !state.db) return;
+    const button = document.getElementById("save-case");
+    if (button) button.disabled = true;
+    const body = { name: draft.name, kind: draft.kind, labels: draft.labels, updated_at: new Date().toISOString() };
+    if (draft.kind === "synthetic") body.files = draft.files || []; else body.index = draft.index || {};
+    try {
+      await state.db.doc(`cases/${name}`).set(body);
+      state.saved.set(name, clone(body));
+      state.drafts.delete(name);
+      toast(`Saved ${name}.`);
+    } catch (error) {
+      toast(`Could not save ${name}: ${error.message || error.code || "try again"}.`);
+    }
+    renderList();
+    renderEditor();
+    renderRunPanel();
+  }
+
+  function discard(name) {
+    state.drafts.delete(name);
+    if (!state.saved.has(name)) state.selected = null;
+    state.selectedFile = null;
+    renderList();
+    renderEditor();
+    renderRunPanel();
+  }
+
+  async function deleteCase(name) {
+    try {
+      await state.db.doc(`cases/${name}`).delete();
+      state.saved.delete(name);
+      state.drafts.delete(name);
+      state.selected = null;
+      toast(`Deleted ${name}. The repo copy moves to evals/.deleted at the next run.`);
+    } catch (error) {
+      toast(`Could not delete ${name}: ${error.message || error.code || "try again"}.`);
+    }
+    state.confirmingDelete = false;
+    renderList();
+    renderEditor();
+    renderRunPanel();
+  }
+
+  /* ---------- run panel ---------- */
+
+  function runSelection() {
+    if (!state.run) {
+      state.run = {
+        models: new Set(config.default_models),
+        tasks: new Set(config.tasks),
+        cases: null,
+        repeats: config.default_repeats,
+      };
+    }
+    const saved = [...state.saved.keys()].sort();
+    if (state.run.cases === null) state.run.cases = new Set(saved);
+    [...state.run.cases].forEach((name) => { if (!state.saved.has(name)) state.run.cases.delete(name); });
+    return state.run;
+  }
+
+  function estimate(selection) {
+    const costs = config.costs;
+    const keys = Object.keys(costs);
+    let total = 0;
+    let unknown = 0;
+    const average = (model, task) => {
+      const values = keys.filter((key) => key.startsWith(`${model}|${task}|`)).map((key) => costs[key]).filter((value) => typeof value === "number");
+      return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+    };
+    selection.models.forEach((model) => selection.tasks.forEach((task) => selection.cases.forEach((caseName) => {
+      const key = `${model}|${task}|${caseName}`;
+      if (typeof costs[key] === "number") { total += costs[key]; return; }
+      const taskRanOnCase = keys.some((other) => other.endsWith(`|${task}|${caseName}`));
+      const caseWasRun = keys.some((other) => other.endsWith(`|${caseName}`));
+      if (caseWasRun && !taskRanOnCase) return;
+      const fallback = average(model, task);
+      if (fallback === null) unknown += 1; else total += fallback;
+    })));
+    return { total: total * selection.repeats, unknown };
+  }
+
+  function formatCost(value) { return value >= 1 ? `$${value.toFixed(2)}` : `$${value.toFixed(value >= 0.1 ? 2 : 3)}`; }
+
+  function checkboxGroup(legend, values, selected, labelOf) {
+    return el("fieldset", {}, [
+      el("legend", { text: legend }),
+      ...values.map((value) => {
+        const box = el("input", { type: "checkbox", id: `run-${legend}-${value}`.replace(/[^A-Za-z0-9_-]/g, "-"), checked: selected.has(value) });
+        box.addEventListener("change", () => { if (box.checked) selected.add(value); else selected.delete(value); renderRunPanel(); });
+        return el("label", { class: "check" }, [box, el("span", { text: labelOf ? labelOf(value) : value })]);
+      }),
+    ]);
+  }
+
+  function runBlocker(selection) {
+    if (!state.connected) return "Open this page on claude.ai to run the benchmark.";
+    if (!state.canWrite) return "You can view these cases but not change them or start runs.";
+    if (anyDirty()) return "Save or discard your case changes first; the benchmark runs on saved cases.";
+    if (state.runs.some((run) => ACTIVE_RUN.includes(run.status))) return "A run is already waiting or in progress.";
+    if (!selection.models.size || !selection.tasks.size || !selection.cases.size) return "Pick at least one model, agent and case.";
+    return "";
+  }
+
+  function renderRunPanel() {
+    const panel = document.getElementById("run-panel");
+    if (!config) { panel.replaceChildren(el("p", { class: "empty", text: "This page has no setup data." })); return; }
+    const selection = runSelection();
+    const repeats = el("select", { id: "run-repeats", "aria-label": "Repeats" }, [1, 2, 3].map((value) => el("option", { value: String(value), text: `${value} repeat${value === 1 ? "" : "s"}`, selected: value === selection.repeats })));
+    repeats.addEventListener("change", () => { selection.repeats = Number(repeats.value); renderRunPanel(); });
+    const cost = estimate(selection);
+    const blocker = runBlocker(selection);
+    const claudeNote = state.claudeStatus === "available" ? "Claude is connected and will start as soon as you click."
+      : state.claudeStatus === "no_session" ? "No Claude session is connected right now. The request is saved; open Claude Code in the spica-advisor project and ask it to process pending benchmark runs."
+      : state.claudeStatus === "writers_only" ? "Only editors of this page can send runs to Claude."
+      : "The request is saved for Claude to pick up.";
+    const button = el("button", { class: "button primary", type: "button", id: "run-benchmark", text: state.sending ? "Sending…" : "Run benchmark",
+      disabled: Boolean(blocker) || state.sending, onclick: () => requestRun(selection, button) });
+    panel.replaceChildren(
+      el("div", { class: "run-grid" }, [
+        checkboxGroup("Models", config.models, selection.models),
+        checkboxGroup("Agents", config.tasks, selection.tasks, humanize),
+        checkboxGroup("Cases", [...state.saved.keys()].sort(), selection.cases),
+        el("fieldset", {}, [el("legend", { text: "Repeats" }), repeats,
+          el("p", { class: "reason", text: "Repeating shows how consistent each model is. One repeat is enough while you iterate on cases." })]),
+      ]),
+      el("div", { class: "run-footer" }, [
+        el("div", {}, [
+          el("p", { class: "estimate" }, ["Estimated cost ", el("strong", { text: formatCost(cost.total) })]),
+          el("p", { class: "reason", text: `Based on run ${config.last_run}.${cost.unknown ? ` ${cost.unknown} model and agent combination${cost.unknown === 1 ? " has" : "s have"} no earlier cost and ${cost.unknown === 1 ? "is" : "are"} not counted.` : ""}` }),
+        ]),
+        el("div", { class: "actions" }, [button]),
+      ]),
+      el("p", { class: "reason", text: blocker || claudeNote }),
+    );
+  }
+
+  async function refreshClaudeStatus() {
+    if (!state.comments) { state.claudeStatus = "unknown"; return; }
+    try { state.claudeStatus = await state.comments.canSendToClaude(); } catch (error) { state.claudeStatus = "unknown"; }
+  }
+
+  async function requestRun(selection, button) {
+    const options = {
+      models: [...selection.models], tasks: [...selection.tasks], cases: [...selection.cases].sort(), repeats: selection.repeats,
+    };
+    const id = new Date().toISOString().replace(/[:.]/g, "-");
+    const text = `Run benchmark ${id}: models ${options.models.join(", ")}; agents ${options.tasks.join(", ")}; cases ${options.cases.join(", ")}; ${options.repeats} repeat(s). Sync the cases from this artifact's database into the repo, validate them, run the benchmark and republish the report. Progress goes to runs/${id}.`;
+    state.sending = true;
+    renderRunPanel();
+    let sent = false;
+    if (state.comments && state.claudeStatus === "available") {
+      try {
+        const anchor = await state.comments.anchorFor(button);
+        await state.comments.sendToClaude({ anchor, text });
+        sent = true;
+      } catch (error) {
+        sent = false;
+      }
+    }
+    try {
+      await state.db.doc(`runs/${id}`).set({
+        status: "requested", requested_at: new Date().toISOString(), options,
+        message: sent ? "Sent to Claude. Waiting for it to start." : "Saved. Waiting for a Claude session to pick it up.",
+      });
+      toast(sent ? "Run sent to Claude." : "Run saved. Ask Claude in Claude Code to process pending benchmark runs.");
+    } catch (error) {
+      toast(`Could not save the run request: ${error.message || error.code || "try again"}.`);
+    }
+    state.sending = false;
+    renderRunPanel();
+  }
+
+  /* ---------- run history ---------- */
+
+  function renderHistory() {
+    const holder = document.getElementById("run-history");
+    if (!state.runs.length) {
+      holder.replaceChildren(el("p", { class: "empty", text: state.connected ? "No runs requested from this page yet." : "Run history appears when the page is opened on claude.ai." }));
+      return;
+    }
+    holder.replaceChildren(...state.runs.map((run) => {
+      const options = run.options || {};
+      const problems = Array.isArray(run.problems) ? run.problems : [];
+      return el("article", { class: "run-item" }, [
+        el("div", { class: "row" }, [
+          el("span", { class: `pill ${run.status}`, text: humanize(run.status || "unknown") }),
+          el("span", { class: "muted", text: (run.requested_at || "").replace("T", " ").slice(0, 16) + " UTC" }),
+          el("span", { class: "secondary", text: `${(options.models || []).length} models · ${(options.tasks || []).length} agents · ${(options.cases || []).length} cases · ${options.repeats || "?"} repeat(s)` }),
+          typeof run.cost === "number" ? el("span", { class: "secondary", text: `Cost ${formatCost(run.cost)}` }) : null,
+        ]),
+        run.message ? el("p", { class: "secondary", text: run.message }) : null,
+        problems.length ? el("ul", {}, problems.slice(0, 20).map((problem) => el("li", { text: String(problem) }))) : null,
+        run.status === "done" ? el("p", {}, [el("a", { href: "./", text: "Open the updated report" })]) : null,
+      ]);
+    }));
+  }
+
+  /* ---------- data ---------- */
+
+  function renderAll() {
+    renderList();
+    renderEditor();
+    renderRunPanel();
+    renderHistory();
+  }
+
+  function showBanner(html) {
+    const banner = document.getElementById("banner");
+    banner.replaceChildren(...html);
+    banner.hidden = false;
+  }
+
+  async function connect() {
+    if (!window.claude || !window.claude.use) {
+      showBanner([el("strong", { text: "Read-only preview. " }), "Open this page from its claude.ai artifact to load and edit cases."]);
+      renderAll();
+      return;
+    }
+    const [db, user, comments] = await Promise.all([
+      window.claude.use("db"), window.claude.use("user"), window.claude.use("comments"),
+    ]);
+    if (!db) {
+      showBanner([el("strong", { text: "Cases can't load here. " }), "Sign in to claude.ai and open this artifact to edit cases."]);
+      renderAll();
+      return;
+    }
+    state.db = db;
+    state.comments = comments;
+    state.connected = true;
+    state.canWrite = user ? (await user.can("data.write")) !== false : true;
+    if (!state.canWrite) showBanner([el("strong", { text: "View only. " }), "Ask the page owner for edit access to change cases or start runs."]);
+    await refreshClaudeStatus();
+    db.collection("cases").onSnapshot((snapshot) => {
+      state.saved = new Map(snapshot.docs.map((doc) => [doc.id, clone(doc.data())]));
+      state.loaded = true;
+      [...state.drafts.keys()].forEach((name) => { if (state.saved.has(name) && !isDirty(name)) state.drafts.delete(name); });
+      if (state.selected && !current(state.selected)) state.selected = null;
+      if (!state.selected && caseNames().length) state.selected = caseNames()[0];
+      renderList();
+      if (!state.selected || !isDirty(state.selected)) renderEditor();
+      renderRunPanel();
+    }, () => {
+      showBanner([el("strong", { text: "Lost the connection to the case store. " }), "Reload the page to reconnect."]);
+    });
+    db.collection("runs").orderBy("requested_at", "desc").limit(8).onSnapshot((snapshot) => {
+      state.runs = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      renderHistory();
+      renderRunPanel();
+    }, () => {});
+    document.addEventListener("visibilitychange", async () => {
+      if (document.visibilityState === "visible") { await refreshClaudeStatus(); renderRunPanel(); }
+    });
+    renderAll();
+  }
+
+  window.addEventListener("beforeunload", (event) => { if (anyDirty()) { event.preventDefault(); event.returnValue = ""; } });
+  renderAll();
+  connect();
+})();
+</script>
+</body>
+</html>

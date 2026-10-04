@@ -1,0 +1,11 @@
+_id: syn1-fn-migration
+name: Bulk-Migration
+language: javascript
+timeout: 60
+triggers:
+  migrateLegacyUsers:
+    type: schedule
+    active: true
+    options:
+      frequency: 0 3 * * *
+      timezone: UTC

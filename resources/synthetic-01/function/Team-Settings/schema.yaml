@@ -1,0 +1,13 @@
+_id: syn1-fn-teams
+name: Team-Settings
+language: javascript
+timeout: 60
+triggers:
+  setTeamPolicies:
+    type: http
+    active: true
+    options:
+      method: Put
+      path: /teams/policies
+      preflight: true
+      authorize: true

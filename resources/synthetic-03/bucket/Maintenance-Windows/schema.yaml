@@ -1,0 +1,27 @@
+_id: syn3-bkt-maintenance
+title: Maintenance Windows
+description: Maintenance Windows records
+icon: view_stream
+primary: status
+readOnly: false
+history: false
+properties:
+  status:
+    type: string
+    title: status
+    options: {}
+  starts_at:
+    type: string
+    title: starts_at
+    options: {}
+  ends_at:
+    type: string
+    title: ends_at
+    options: {}
+  message:
+    type: string
+    title: message
+    options: {}
+acl:
+  read: true==true
+  write: auth.attributes.role == 'admin' || true==true

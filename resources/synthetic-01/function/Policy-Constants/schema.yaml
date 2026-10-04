@@ -1,0 +1,13 @@
+_id: syn1-fn-constants
+name: Policy-Constants
+language: javascript
+timeout: 60
+triggers:
+  listPolicies:
+    type: http
+    active: true
+    options:
+      method: Get
+      path: /policies
+      preflight: true
+      authorize: true

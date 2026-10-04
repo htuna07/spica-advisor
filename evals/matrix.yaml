@@ -1,0 +1,8 @@
+models:
+  - gpt-6-luna
+  - gpt-6.1-sol
+  - claude-haiku-4-5
+  - claude-sonnet-5-5
+cases: all
+repeats: 3
+tasks: all

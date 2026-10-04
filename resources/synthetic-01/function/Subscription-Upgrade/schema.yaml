@@ -1,0 +1,13 @@
+_id: syn1-fn-upgrade
+name: Subscription-Upgrade
+language: javascript
+timeout: 60
+triggers:
+  upgradeSubscription:
+    type: http
+    active: true
+    options:
+      method: Post
+      path: /subscriptions/upgrade
+      preflight: true
+      authorize: true

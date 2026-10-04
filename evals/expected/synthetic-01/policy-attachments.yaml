@@ -1,0 +1,16 @@
+- function_id: syn1-fn-onboarding
+  policy_id: 64a1f0c2e4b0a1b2c3d4e501
+- function_id: syn1-fn-partners
+  policy_name: PARTNER_POLICY_ID
+- function_id: syn1-fn-admin
+  policy_id: 64a1f0c2e4b0a1b2c3d4e502
+- function_id: syn1-fn-vendor
+  policy_name: VENDOR_POLICY_ID
+- function_id: syn1-fn-support
+  policy_id: 64a1f0c2e4b0a1b2c3d4e503
+- function_id: syn1-fn-migration
+  policy_id: 64a1f0c2e4b0a1b2c3d4e504
+- function_id: syn1-fn-upgrade
+  policy_id: 64a1f0c2e4b0a1b2c3d4e505
+- function_id: syn1-fn-upgrade
+  policy_name: PREMIUM_POLICY_ID

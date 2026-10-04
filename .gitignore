@@ -1,5 +1,12 @@
 .env
 resources/**
+!resources/synthetic-*/
+!resources/synthetic-*/**
 /output/
 
 __pycache__/
+
+evals/expected/*
+!evals/expected/synthetic-*/
+evals/runs/
+evals/.deleted/

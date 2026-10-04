@@ -1,0 +1,13 @@
+_id: syn1-fn-admin
+name: Admin-Promotion
+language: javascript
+timeout: 60
+triggers:
+  promoteToAdmin:
+    type: http
+    active: true
+    options:
+      method: Post
+      path: /admins/promote
+      preflight: true
+      authorize: true

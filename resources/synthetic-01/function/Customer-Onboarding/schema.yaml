@@ -1,0 +1,13 @@
+_id: syn1-fn-onboarding
+name: Customer-Onboarding
+language: javascript
+timeout: 60
+triggers:
+  onboardCustomer:
+    type: http
+    active: true
+    options:
+      method: Post
+      path: /customers/onboard
+      preflight: true
+      authorize: true

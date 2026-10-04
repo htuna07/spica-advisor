@@ -1,0 +1,21 @@
+_id: syn2-fn-webhooks
+name: Webhooks
+language: javascript
+timeout: 60
+triggers:
+  statusCallback:
+    type: http
+    active: true
+    options:
+      method: Post
+      path: /webhooks/status
+      preflight: true
+      authorize: false
+  forwardEvent:
+    type: http
+    active: true
+    options:
+      method: Post
+      path: /webhooks/forward
+      preflight: true
+      authorize: false

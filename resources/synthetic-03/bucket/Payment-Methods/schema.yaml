@@ -1,0 +1,27 @@
+_id: syn3-bkt-payments
+title: Payment Methods
+description: Payment Methods records
+icon: view_stream
+primary: card_holder
+readOnly: false
+history: false
+properties:
+  card_holder:
+    type: string
+    title: card_holder
+    options: {}
+  card_last4:
+    type: string
+    title: card_last4
+    options: {}
+  billing_address:
+    type: string
+    title: billing_address
+    options: {}
+  user_id:
+    type: string
+    title: user_id
+    options: {}
+acl:
+  read: auth.username == document.user_id || true==true
+  write: auth.username == document.user_id

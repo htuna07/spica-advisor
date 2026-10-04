@@ -1,0 +1,27 @@
+_id: syn3-bkt-campaigns
+title: Regional Campaigns
+description: Regional Campaigns records
+icon: view_stream
+primary: title
+readOnly: false
+history: false
+properties:
+  title:
+    type: string
+    title: title
+    options: {}
+  country:
+    type: string
+    title: country
+    options: {}
+  discount:
+    type: string
+    title: discount
+    options: {}
+  starts_at:
+    type: string
+    title: starts_at
+    options: {}
+acl:
+  read: auth.attributes.country == document.country
+  write: auth.attributes.role == 'marketing'
