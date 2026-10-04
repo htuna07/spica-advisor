@@ -53,6 +53,8 @@ def read_functions(context: BrokenAccessControlContext):
 
 
 def find_policy_attachments(context: BrokenAccessControlContext):
+    if not context.functions:
+        return
     response = context.runner.run(
         POLICY_ATTACHMENT_AGENT,
         ATTACHMENT_INPUT,

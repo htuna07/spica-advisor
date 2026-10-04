@@ -1,3 +1,4 @@
+from spica_advisor.investigations import broken_access_control
 from spica_advisor.investigations.broken_access_control.context import BrokenAccessControlContext
 from spica_advisor.investigations.broken_access_control.steps import map_findings_to_policies
 
@@ -59,3 +60,15 @@ def test_findings_name_policies_and_buckets_with_their_paths(tmp_path):
             },
         }]}],
     }]
+
+
+class FailingRunner:
+    def run(self, *args, **kwargs):
+        raise AssertionError("agent should not run")
+
+
+def test_skips_agents_when_project_has_no_functions(tmp_path):
+    write_schema(tmp_path, "policy/Customer", "_id: p1\nname: Customer\n")
+    write_schema(tmp_path, "bucket/Orders", "_id: b1\ntitle: Orders\n")
+
+    assert broken_access_control.build().run(tmp_path, FailingRunner()) == []
