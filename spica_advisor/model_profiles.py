@@ -34,10 +34,22 @@ MODEL_PROFILES = {
             settings=ModelSettings(reasoning=Reasoning(summary="auto")),
         ),
         ModelProfile(
+            name="gpt-6.1-sol",
+            provider="openai",
+            model_id="gpt-6.1-sol",
+            settings=ModelSettings(reasoning=Reasoning(summary="auto")),
+        ),
+        ModelProfile(
             name="claude-haiku-4-5",
             provider="anthropic",
             model_id="claude-haiku-4-5",
             settings=ModelSettings(max_tokens=8192),
+        ),
+        ModelProfile(
+            name="claude-sonnet-5-5",
+            provider="anthropic",
+            model_id="claude-sonnet-5-5",
+            settings=ModelSettings(max_tokens=16000),
         ),
     )
 }
