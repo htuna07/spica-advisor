@@ -1,5 +1,6 @@
+import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Self
 
@@ -12,6 +13,7 @@ class InvestigationContext:
     project_dir: Path
     runner: AgentRunner
     report: Any = None
+    step_seconds: dict[str, float] = field(default_factory=dict)
 
 
 Step = Callable[[InvestigationContext], None]
@@ -23,11 +25,19 @@ class Investigation:
     context_type: type[InvestigationContext]
     steps: tuple[tuple[str, Step], ...]
 
-    def run(self, project_dir, runner):
-        context = self.context_type(project_dir=project_dir, runner=runner)
+    def create_context(self, project_dir, runner):
+        return self.context_type(project_dir=project_dir, runner=runner)
+
+    def execute(self, context):
         for step_name, step in self.steps:
             LOGGER.info("[%s] %s", self.name, step_name)
+            started = time.perf_counter()
             step(context)
+            context.step_seconds[step_name] = round(time.perf_counter() - started, 3)
+
+    def run(self, project_dir, runner):
+        context = self.create_context(project_dir, runner)
+        self.execute(context)
         return context.report
 
 
