@@ -4,6 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 from agents import Agent, AgentOutputSchema, ModelSettings, RunConfig, Runner, function_tool
+from agents.exceptions import ModelBehaviorError, ModelRefusalError
+from anthropic.types import ThinkingBlock
 from openai.types.responses import ResponseFunctionToolCall, ResponseOutputMessage
 from pydantic import BaseModel
 
@@ -49,8 +51,19 @@ def tool_use_block(call_id, name, arguments):
     return SimpleNamespace(type="tool_use", id=call_id, name=name, input=arguments)
 
 
-def anthropic_message(*content, usage=None):
-    return SimpleNamespace(id="msg_1", content=list(content), usage=usage or anthropic_usage(), _request_id="req_1")
+def anthropic_message(*content, usage=None, stop_reason="end_turn", stop_details=None):
+    return SimpleNamespace(
+        id="msg_1",
+        content=list(content),
+        usage=usage or anthropic_usage(),
+        stop_reason=stop_reason,
+        stop_details=stop_details,
+        _request_id="req_1",
+    )
+
+
+def thinking_block(signature):
+    return ThinkingBlock(type="thinking", thinking="", signature=signature)
 
 
 class FakeMessages:
@@ -197,3 +210,60 @@ def test_agent_can_call_tools_before_returning_structured_output():
         {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "value-of-a"}]},
     ]
     assert result.context_wrapper.usage.requests == 2
+
+
+def get_response(client):
+    return asyncio.run(AnthropicModel("claude-test", client).get_response(
+        None, "hi", ModelSettings(), [], None, [], None,
+        previous_response_id=None, conversation_id=None, prompt=None,
+    ))
+
+
+def test_output_keeps_block_order_and_merges_adjacent_text():
+    output = to_output(anthropic_message(
+        thinking_block("sig-1"),
+        text_block("Checking "),
+        text_block("now."),
+        tool_use_block("toolu_1", "lookup", {"key": "a"}),
+    ))
+
+    assert [item.type for item in output] == ["reasoning", "message", "function_call"]
+    assert json.loads(output[0].encrypted_content) == {"type": "thinking", "thinking": "", "signature": "sig-1"}
+    assert output[1].content[0].text == "Checking now."
+
+
+def test_thinking_blocks_are_sent_back_unchanged_before_their_tool_call():
+    client = FakeClient(
+        anthropic_message(thinking_block("sig-1"), tool_use_block("toolu_1", "lookup", {"key": "a"})),
+        anthropic_message(thinking_block("sig-2"), text_block('{"value": "value-of-a"}')),
+    )
+    agent = Agent(name="Finder", instructions="Use tools.", tools=[lookup], output_type=Answer)
+
+    result = Runner.run_sync(
+        agent,
+        "find a",
+        run_config=RunConfig(model=AnthropicModel("claude-test", client), tracing_disabled=True),
+    )
+
+    assert result.final_output == Answer(value="value-of-a")
+    assistant_turn = client.messages.requests[1]["messages"][1]
+    assert assistant_turn == {"role": "assistant", "content": [
+        {"type": "thinking", "thinking": "", "signature": "sig-1"},
+        {"type": "tool_use", "id": "toolu_1", "name": "lookup", "input": {"key": "a"}},
+    ]}
+
+
+def test_refusal_raises_model_refusal_error_with_category():
+    client = FakeClient(anthropic_message(
+        stop_reason="refusal", stop_details=SimpleNamespace(type="refusal", category="cyber", explanation=None),
+    ))
+
+    with pytest.raises(ModelRefusalError, match="cyber"):
+        get_response(client)
+
+
+def test_response_cut_off_at_max_tokens_raises_model_behavior_error():
+    client = FakeClient(anthropic_message(text_block('{"value": "trunc'), stop_reason="max_tokens"))
+
+    with pytest.raises(ModelBehaviorError, match="max_tokens"):
+        get_response(client)

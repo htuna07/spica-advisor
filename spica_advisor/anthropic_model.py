@@ -1,13 +1,21 @@
 import json
+from itertools import groupby
 
 from agents import FunctionTool, Model, ModelResponse, Usage
+from agents.exceptions import ModelBehaviorError, ModelRefusalError
 from anthropic import AsyncAnthropic
-from openai.types.responses import ResponseFunctionToolCall, ResponseOutputMessage, ResponseOutputText
+from openai.types.responses import (
+    ResponseFunctionToolCall,
+    ResponseOutputMessage,
+    ResponseOutputText,
+    ResponseReasoningItem,
+)
 from openai.types.responses.response_usage import InputTokensDetails, OutputTokensDetails
 
 
 DEFAULT_MAX_TOKENS = 8192
 TEXT_PART_TYPES = {"input_text", "output_text"}
+THINKING_BLOCK_TYPES = {"thinking", "redacted_thinking"}
 
 
 def text_of(content):
@@ -34,6 +42,8 @@ def to_block(item):
             "tool_use_id": item["call_id"],
             "content": text_of(item["output"]),
         }
+    if item_type == "reasoning" and item.get("encrypted_content"):
+        return "assistant", json.loads(item["encrypted_content"])
     raise ValueError(f"Unsupported input item type: {item_type}")
 
 
@@ -80,28 +90,54 @@ def build_request(model, system_instructions, input, model_settings, tools, outp
     return request
 
 
-def to_output(message):
-    output = []
-    text = "".join(block.text for block in message.content if block.type == "text")
-    if text:
-        output.append(ResponseOutputMessage(
-            id=message.id,
-            type="message",
-            role="assistant",
-            status="completed",
-            content=[ResponseOutputText(type="output_text", text=text, annotations=[])],
-        ))
-    output.extend(
-        ResponseFunctionToolCall(
+def text_message(message_id, text):
+    return ResponseOutputMessage(
+        id=message_id,
+        type="message",
+        role="assistant",
+        status="completed",
+        content=[ResponseOutputText(type="output_text", text=text, annotations=[])],
+    )
+
+
+def output_item(message_id, index, block):
+    if block.type in THINKING_BLOCK_TYPES:
+        # Anthropic requires thinking blocks to be sent back unchanged on the next turn of a tool loop
+        return ResponseReasoningItem(
+            id=f"{message_id}-thinking-{index}",
+            type="reasoning",
+            summary=[],
+            encrypted_content=json.dumps(block.model_dump(mode="json", exclude_none=True)),
+        )
+    if block.type == "tool_use":
+        return ResponseFunctionToolCall(
             type="function_call",
             call_id=block.id,
             name=block.name,
             arguments=json.dumps(block.input),
         )
-        for block in message.content
-        if block.type == "tool_use"
-    )
+    return None
+
+
+def to_output(message):
+    output = []
+    indexed_blocks = enumerate(message.content)
+    for is_text, group in groupby(indexed_blocks, key=lambda indexed: indexed[1].type == "text"):
+        if is_text:
+            text = "".join(block.text for _, block in group)
+            if text:
+                output.append(text_message(message.id, text))
+        else:
+            output.extend(item for index, block in group if (item := output_item(message.id, index, block)))
     return output
+
+
+def check_stop_reason(message):
+    if message.stop_reason == "refusal":
+        category = getattr(message.stop_details, "category", None)
+        raise ModelRefusalError(f"Anthropic declined the request (category: {category})")
+    if message.stop_reason == "max_tokens":
+        raise ModelBehaviorError("Anthropic response was cut off at max_tokens")
 
 
 def to_usage(usage):
@@ -144,6 +180,7 @@ class AnthropicModel(Model):
         message = await self.client.messages.create(**build_request(
             self.model, system_instructions, input, model_settings, tools, output_schema,
         ))
+        check_stop_reason(message)
         return ModelResponse(
             output=to_output(message),
             usage=to_usage(message.usage),
