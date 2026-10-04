@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Self
 
 from spica_advisor.log import LOGGER
@@ -8,7 +9,7 @@ from spica_advisor.runner import AgentRunner
 
 @dataclass
 class InvestigationContext:
-    project: str
+    project_dir: Path
     runner: AgentRunner
     report: Any = None
 
@@ -22,8 +23,8 @@ class Investigation:
     context_type: type[InvestigationContext]
     steps: tuple[tuple[str, Step], ...]
 
-    def run(self, project, runner):
-        context = self.context_type(project=project, runner=runner)
+    def run(self, project_dir, runner):
+        context = self.context_type(project_dir=project_dir, runner=runner)
         for step_name, step in self.steps:
             LOGGER.info("[%s] %s", self.name, step_name)
             step(context)

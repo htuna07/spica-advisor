@@ -18,7 +18,7 @@ def has_public_endpoint(schema):
 
 
 def read_functions(context: UnauthenticatedEndpointsContext):
-    context.functions = load_functions(context.project)
+    context.functions = load_functions(context.project_dir)
     LOGGER.info("Discovered %d functions", len(context.functions))
 
 

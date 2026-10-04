@@ -48,7 +48,7 @@ def matches_report(policy, report):
 
 
 def read_functions(context: BrokenAccessControlContext):
-    context.functions = load_functions(context.project)
+    context.functions = load_functions(context.project_dir)
     LOGGER.debug("Discovered %d functions", len(context.functions))
 
 
@@ -64,7 +64,7 @@ def find_policy_attachments(context: BrokenAccessControlContext):
 
 
 def load_relevant_policies(context: BrokenAccessControlContext):
-    policies = load_policies(context.project)
+    policies = load_policies(context.project_dir)
     context.policies = [
         policy for policy in policies
         if any(matches_report(policy, report) for report in context.attachment_reports)
@@ -75,7 +75,7 @@ def load_relevant_policies(context: BrokenAccessControlContext):
 
 
 def find_bucket_accesses(context: BrokenAccessControlContext):
-    context.buckets = load_buckets(context.project)
+    context.buckets = load_buckets(context.project_dir)
     context.bucket_ids = list(dict.fromkeys(
         bucket_id
         for policy in context.policies

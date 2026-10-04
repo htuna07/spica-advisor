@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import pytest
 
@@ -39,7 +40,7 @@ def test_build_rejects_duplicate_step_names():
 
 def test_run_executes_steps_in_order_on_shared_context_and_returns_report():
     def finish(context):
-        context.report = {"project": context.project, "calls": list(context.calls)}
+        context.report = {"project": context.project_dir.name, "calls": list(context.calls)}
 
     investigation = (
         InvestigationBuilder("demo")
@@ -50,7 +51,7 @@ def test_run_executes_steps_in_order_on_shared_context_and_returns_report():
         .build()
     )
 
-    report = investigation.run("some-project", runner=None)
+    report = investigation.run(Path("some-project"), runner=None)
 
     assert report == {"project": "some-project", "calls": ["first", "second"]}
 
@@ -67,5 +68,6 @@ def test_each_run_gets_a_fresh_context():
         .build()
     )
 
-    assert investigation.run("p", runner=None) == ["first"]
-    assert investigation.run("p", runner=None) == ["first"]
+    assert investigation.run(Path("p"), runner=None) == ["first"]
+    assert investigation.run(Path("p"), runner=None) == ["first"]
+

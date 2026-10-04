@@ -6,6 +6,7 @@ from pprint import pformat
 from spica_advisor.investigations import INVESTIGATIONS
 from spica_advisor.log import LOGGER, configure_logging
 from spica_advisor.report import write_report
+from spica_advisor.resources import RESOURCES_ROOT
 from spica_advisor.runner import AgentRunner
 
 
@@ -50,7 +51,7 @@ def selected_investigations(names):
 
 
 def run_investigation(investigation, project, runner):
-    report = investigation.run(project, runner)
+    report = investigation.run(RESOURCES_ROOT / project, runner)
     write_report(project, investigation.name, report)
     if LOGGER.isEnabledFor(logging.DEBUG):
         LOGGER.debug("Full %s report:\n%s",

@@ -29,9 +29,9 @@ def read_function_source(folder):
     )
 
 
-def load_functions(project):
+def load_functions(project_dir):
     definitions = []
-    for schema_path in (RESOURCES_ROOT / project / "function").rglob("schema.yaml"):
+    for schema_path in (project_dir / "function").rglob("schema.yaml"):
         schema = read_schema(schema_path)
         if schema:
             definitions.append({
@@ -43,20 +43,20 @@ def load_functions(project):
     return definitions
 
 
-def load_policies(project):
-    return load_schemas(RESOURCES_ROOT / project / "policy")
+def load_policies(project_dir):
+    return load_schemas(project_dir / "policy")
 
 
-def load_env_vars(project):
+def load_env_vars(project_dir):
     return [
         {"_id": env_var.get("_id"), "name": env_var.get("key")}
-        for env_var in load_schemas(RESOURCES_ROOT / project / "env-var")
+        for env_var in load_schemas(project_dir / "env-var")
     ]
 
 
-def load_buckets(project):
+def load_buckets(project_dir):
     return {
         bucket["_id"]: bucket
-        for bucket in load_schemas(RESOURCES_ROOT / project / "bucket")
+        for bucket in load_schemas(project_dir / "bucket")
         if bucket.get("_id")
     }

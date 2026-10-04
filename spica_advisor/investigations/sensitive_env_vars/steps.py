@@ -9,7 +9,7 @@ REPORTED_LEVELS = {"medium", "high"}
 
 
 def read_env_vars(context: SensitiveEnvVarsContext):
-    context.env_vars = load_env_vars(context.project)
+    context.env_vars = load_env_vars(context.project_dir)
     LOGGER.info("Discovered %d env vars", len(context.env_vars))
 
 

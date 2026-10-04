@@ -72,11 +72,10 @@ class FakeRunner:
         return self.response
 
 
-def test_load_functions_includes_id_schema_and_content(tmp_path, monkeypatch):
-    monkeypatch.setattr(resources, "RESOURCES_ROOT", tmp_path)
+def test_load_functions_includes_id_schema_and_content(tmp_path):
     write_function(tmp_path, "demo", "fn-1", PUBLIC_HTTP, "export function handler() {}")
 
-    [definition] = resources.load_functions("demo")
+    [definition] = resources.load_functions(tmp_path / "demo")
 
     assert definition["_id"] == "fn-1"
     assert definition["name"] == "fn-1"
@@ -84,8 +83,7 @@ def test_load_functions_includes_id_schema_and_content(tmp_path, monkeypatch):
     assert definition["content"] == "export function handler() {}"
 
 
-def test_sends_only_public_functions_without_schema_to_agent(tmp_path, monkeypatch):
-    monkeypatch.setattr(resources, "RESOURCES_ROOT", tmp_path)
+def test_sends_only_public_functions_without_schema_to_agent(tmp_path):
     write_function(tmp_path, "demo", "public", PUBLIC_HTTP, "// public source")
     write_function(tmp_path, "demo", "no-authorize", PUBLIC_HTTP_WITHOUT_AUTHORIZE, "// no authorize source")
     write_function(tmp_path, "demo", "authorized", AUTHORIZED_HTTP, "// authorized source")
@@ -93,7 +91,7 @@ def test_sends_only_public_functions_without_schema_to_agent(tmp_path, monkeypat
     write_function(tmp_path, "demo", "scheduled", SCHEDULE, "// scheduled source")
     runner = FakeRunner(FunctionRiskResponse(functions=[]))
 
-    unauthenticated_endpoints.build().run("demo", runner)
+    unauthenticated_endpoints.build().run(tmp_path / "demo", runner)
 
     assert runner.agents == [ENDPOINT_RISK_AGENT]
     [prompt] = runner.prompts
@@ -105,8 +103,7 @@ def test_sends_only_public_functions_without_schema_to_agent(tmp_path, monkeypat
     assert "/public" not in prompt
 
 
-def test_reports_method_risks_grouped_by_analyzed_function(tmp_path, monkeypatch):
-    monkeypatch.setattr(resources, "RESOURCES_ROOT", tmp_path)
+def test_reports_method_risks_grouped_by_analyzed_function(tmp_path):
     write_function(tmp_path, "demo", "fn-1", PUBLIC_HTTP, "export function handler(req, res) {}")
     write_function(tmp_path, "demo", "fn-2", PUBLIC_HTTP, "export function handler(req, res) {}")
     runner = FakeRunner(FunctionRiskResponse(functions=[
@@ -120,7 +117,7 @@ def test_reports_method_risks_grouped_by_analyzed_function(tmp_path, monkeypatch
         ]),
     ]))
 
-    report = unauthenticated_endpoints.build().run("demo", runner)
+    report = unauthenticated_endpoints.build().run(tmp_path / "demo", runner)
 
     assert report == [
         {
@@ -133,10 +130,9 @@ def test_reports_method_risks_grouped_by_analyzed_function(tmp_path, monkeypatch
     ]
 
 
-def test_skips_agent_when_no_public_functions(tmp_path, monkeypatch):
-    monkeypatch.setattr(resources, "RESOURCES_ROOT", tmp_path)
+def test_skips_agent_when_no_public_functions(tmp_path):
     write_function(tmp_path, "demo", "authorized", AUTHORIZED_HTTP, "// authorized source")
     runner = FakeRunner(response=None)
 
-    assert unauthenticated_endpoints.build().run("demo", runner) == []
+    assert unauthenticated_endpoints.build().run(tmp_path / "demo", runner) == []
     assert runner.prompts == []

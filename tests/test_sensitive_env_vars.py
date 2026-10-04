@@ -28,15 +28,13 @@ class FakeRunner:
         return self.response
 
 
-def test_load_env_vars_omits_values(tmp_path, monkeypatch):
-    monkeypatch.setattr(resources, "RESOURCES_ROOT", tmp_path)
+def test_load_env_vars_omits_values(tmp_path):
     write_env_var(tmp_path, "demo", "id-1", "API_KEY")
 
-    assert resources.load_env_vars("demo") == [{"_id": "id-1", "name": "API_KEY"}]
+    assert resources.load_env_vars(tmp_path / "demo") == [{"_id": "id-1", "name": "API_KEY"}]
 
 
-def test_reports_only_medium_and_high_env_vars(tmp_path, monkeypatch):
-    monkeypatch.setattr(resources, "RESOURCES_ROOT", tmp_path)
+def test_reports_only_medium_and_high_env_vars(tmp_path):
     write_env_var(tmp_path, "demo", "id-1", "API_KEY")
     write_env_var(tmp_path, "demo", "id-2", "ADMIN_EMAIL")
     write_env_var(tmp_path, "demo", "id-3", "LOG_LEVEL")
@@ -46,7 +44,7 @@ def test_reports_only_medium_and_high_env_vars(tmp_path, monkeypatch):
         EnvVarSensitiveness(name="LOG_LEVEL", sensitiveness_level="low", reason="config"),
     ]))
 
-    report = sensitive_env_vars.build().run("demo", runner)
+    report = sensitive_env_vars.build().run(tmp_path / "demo", runner)
 
     assert sorted(report, key=lambda entry: entry["_id"]) == [
         {"_id": "id-1", "report": {"sensitiveness_level": "high", "reason": "credential"}},
@@ -56,9 +54,8 @@ def test_reports_only_medium_and_high_env_vars(tmp_path, monkeypatch):
     assert "super-secret-value" not in runner.prompts[0]
 
 
-def test_skips_agent_when_no_env_vars(tmp_path, monkeypatch):
-    monkeypatch.setattr(resources, "RESOURCES_ROOT", tmp_path)
+def test_skips_agent_when_no_env_vars(tmp_path):
     runner = FakeRunner(response=None)
 
-    assert sensitive_env_vars.build().run("demo", runner) == []
+    assert sensitive_env_vars.build().run(tmp_path / "demo", runner) == []
     assert runner.prompts == []
