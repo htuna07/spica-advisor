@@ -8,11 +8,14 @@ from spica_advisor.log import LOGGER, configure_logging
 from spica_advisor.metrics import totals
 from spica_advisor.model_profiles import DEFAULT_MODEL, MODEL_PROFILES
 from spica_advisor.report import write_report
-from spica_advisor.resources import RESOURCES_ROOT
 from spica_advisor.runner import AgentRunner
 
 
-DEFAULT_PROJECT = "spica-orchestrator"
+def existing_dir(value):
+    path = Path(value)
+    if not path.is_dir():
+        raise argparse.ArgumentTypeError(f"not a directory: {value}")
+    return path
 
 
 def investigation_names(value):
@@ -33,7 +36,8 @@ def parse_args():
     parser.add_argument("--log-file", type=Path)
     parser.add_argument(
         "--log-format", choices=("text", "json"), default="text")
-    parser.add_argument("--project", default=DEFAULT_PROJECT)
+    parser.add_argument("--project-dir", type=existing_dir, default=Path("."))
+    parser.add_argument("--output-dir", type=Path, default=Path("output"))
     parser.add_argument("--model", choices=sorted(MODEL_PROFILES), default=DEFAULT_MODEL)
     parser.add_argument(
         "--investigations",
@@ -53,9 +57,9 @@ def selected_investigations(names):
     return [investigation for investigation in INVESTIGATIONS if investigation.name in names]
 
 
-def run_investigation(investigation, context, project, model):
+def run_investigation(investigation, context, output_dir):
     investigation.execute(context)
-    write_report(project, model, investigation.name, context.report)
+    write_report(output_dir, investigation.name, context.report)
     if LOGGER.isEnabledFor(logging.DEBUG):
         LOGGER.debug("Full %s report:\n%s",
                      investigation.name, pformat(context.report))
@@ -88,10 +92,10 @@ def run():
 
     failed = []
     for investigation in selected_investigations(args.investigations):
-        context = investigation.create_context(RESOURCES_ROOT / args.project, runner)
+        context = investigation.create_context(args.project_dir, runner)
         first_call = len(runner.calls)
         try:
-            run_investigation(investigation, context, args.project, args.model)
+            run_investigation(investigation, context, args.output_dir)
         except Exception:
             LOGGER.exception("Investigation %s failed", investigation.name)
             failed.append(investigation.name)

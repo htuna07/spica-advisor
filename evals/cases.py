@@ -10,6 +10,7 @@ from spica_advisor.investigations.unauthenticated_endpoints.models import RiskLe
 
 
 EXPECTED_ROOT = Path("evals/expected")
+RESOURCES_ROOT = Path("resources")
 LABEL_FILES = {
     "sensitive_env_vars": "sensitive-env-vars.yaml",
     "unauthenticated_endpoints": "unauthenticated-endpoints.yaml",

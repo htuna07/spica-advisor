@@ -6,13 +6,13 @@ from pathlib import Path
 
 import yaml
 
-from evals.cases import EXPECTED_ROOT, LABEL_FILES
+from evals.cases import EXPECTED_ROOT, LABEL_FILES, RESOURCES_ROOT
 from evals.harness import MATRIX_PATH
 from evals.tasks import TASKS
 from evals.validation import IGNORED_DIRS, SCANNED_SUFFIXES
 from spica_advisor.investigations.unauthenticated_endpoints.steps import is_public_endpoint
 from spica_advisor.model_profiles import MODEL_PROFILES
-from spica_advisor.resources import RESOURCES_ROOT, load_buckets, load_env_vars, load_functions, load_policies
+from spica_advisor.resources import load_buckets, load_env_vars, load_functions, load_policies
 
 
 TRASH_ROOT = Path("evals/.deleted")

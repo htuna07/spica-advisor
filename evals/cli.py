@@ -1,14 +1,13 @@
 import argparse
 from pathlib import Path
 
-from evals.cases import EXPECTED_ROOT, find_cases
+from evals.cases import EXPECTED_ROOT, RESOURCES_ROOT, find_cases
 from evals.harness import new_run_dir, resolve_matrix, run_matrix, validated_cases
 from evals.storage import read_json, write_json
 from evals.summary import write_summary
 from evals.validation import check_case
 from evals.workspace import export_cases, import_cases
 from spica_advisor.log import configure_logging
-from spica_advisor.resources import RESOURCES_ROOT
 
 
 def parse_args():

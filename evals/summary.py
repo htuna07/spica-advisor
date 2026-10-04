@@ -6,13 +6,12 @@ from pathlib import Path
 
 import yaml
 
-from evals.cases import EXPECTED_ROOT, find_cases
+from evals.cases import EXPECTED_ROOT, RESOURCES_ROOT, find_cases
 from evals.harness import output_path
 from evals.scoring import SCORERS, merge_counts, ratio
 from evals.storage import read_json, read_jsonl, write_json
 from evals.workspace import render_cases_page
 from spica_advisor.metrics import OK_STATUS
-from spica_advisor.resources import RESOURCES_ROOT
 
 
 PRICING_PATH = Path("evals/pricing.yaml")

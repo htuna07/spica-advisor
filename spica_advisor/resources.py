@@ -3,7 +3,6 @@ from pathlib import Path
 import yaml
 
 
-RESOURCES_ROOT = Path("resources")
 FUNCTION_EXTENSIONS = ("mjs", "js", "ts")
 
 

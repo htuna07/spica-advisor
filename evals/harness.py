@@ -7,14 +7,13 @@ from pathlib import Path
 
 import yaml
 
-from evals.cases import EXPECTED_ROOT, find_cases
+from evals.cases import EXPECTED_ROOT, RESOURCES_ROOT, find_cases
 from evals.storage import append_jsonl, write_json
 from evals.tasks import TASKS
 from evals.validation import check_case
 from spica_advisor.log import LOGGER
 from spica_advisor.metrics import OK_STATUS
 from spica_advisor.model_profiles import MODEL_PROFILES
-from spica_advisor.resources import RESOURCES_ROOT
 from spica_advisor.runner import AgentRunner
 
 
