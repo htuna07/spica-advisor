@@ -35,6 +35,13 @@ def load_policies(project):
     return load_schemas(RESOURCES_ROOT / project / "policy")
 
 
+def load_env_vars(project):
+    return [
+        {"_id": env_var.get("_id"), "name": env_var.get("key")}
+        for env_var in load_schemas(RESOURCES_ROOT / project / "env-var")
+    ]
+
+
 def load_buckets(project):
     return {
         bucket["_id"]: bucket

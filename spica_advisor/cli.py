@@ -9,22 +9,36 @@ from spica_advisor.log import LOGGER, configure_logging
 from spica_advisor.report import write_report
 
 
-DEFAULT_PROJECT = "spica-orchestrator"
+DEFAULT_PROJECT = "spica-reward-service"
+
+
+def investigation_names(value):
+    known = {investigation.name for investigation in INVESTIGATIONS}
+    names = [name.strip() for name in value.split(",") if name.strip()]
+    unknown = [name for name in names if name not in known]
+    if not names or unknown:
+        raise argparse.ArgumentTypeError(
+            f"invalid investigation(s): {', '.join(unknown) or value!r} "
+            f"(choose from {', '.join(sorted(known))})"
+        )
+    return names
 
 
 def parse_args():
-    investigation_names = [investigation.name for investigation in INVESTIGATIONS]
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--log-file", type=Path)
-    parser.add_argument("--log-format", choices=("text", "json"), default="text")
+    parser.add_argument(
+        "--log-format", choices=("text", "json"), default="text")
     parser.add_argument("--project", default=DEFAULT_PROJECT)
     parser.add_argument(
-        "--investigation",
-        action="append",
-        choices=investigation_names,
-        dest="investigations",
-        help="repeatable; runs all investigations when omitted",
+        "--investigations",
+        type=investigation_names,
+        metavar="NAME[,NAME...]",
+        help=(
+            "comma-separated; runs all investigations when omitted; "
+            f"available: {', '.join(investigation.name for investigation in INVESTIGATIONS)}"
+        ),
     )
     return parser.parse_args()
 
@@ -39,7 +53,8 @@ def run_investigation(investigation, project, llm):
     report = investigation.run(project, llm)
     write_report(project, investigation.name, report)
     if LOGGER.isEnabledFor(logging.DEBUG):
-        LOGGER.debug("Full %s report:\n%s", investigation.name, pformat(report))
+        LOGGER.debug("Full %s report:\n%s",
+                     investigation.name, pformat(report))
 
 
 def run():
