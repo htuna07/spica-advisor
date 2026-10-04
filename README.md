@@ -37,7 +37,7 @@ runs, and closed when a complete run finds nothing. Set `issue: false` to skip i
 
 | Input | Default | Description |
 | --- | --- | --- |
-| `model` | `gpt-6-luna` | `gpt-6-luna`, `gpt-6.1-sol`, `claude-haiku-4-5` or `claude-sonnet-5-5` |
+| `model` | default profile | A profile from `MODEL_PROFILES` in `spica_advisor/model_profiles.py` |
 | `project-dir` | `.` | Directory holding the Spica resources |
 | `output-dir` | `output` | Directory for the JSON and Markdown reports |
 | `investigations` | all | Comma-separated subset to run |

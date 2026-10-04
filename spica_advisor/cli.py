@@ -20,6 +20,10 @@ def existing_dir(value):
     return path
 
 
+def model_name(value):
+    return value.strip() or DEFAULT_MODEL
+
+
 def investigation_names(value):
     known = {investigation.name for investigation in INVESTIGATIONS}
     names = [name.strip() for name in value.split(",") if name.strip()]
@@ -42,7 +46,13 @@ def parse_args():
         "--log-format", choices=("text", "json"), default="text")
     parser.add_argument("--project-dir", type=existing_dir, default=Path("."))
     parser.add_argument("--output-dir", type=Path, default=Path("output"))
-    parser.add_argument("--model", choices=sorted(MODEL_PROFILES), default=DEFAULT_MODEL)
+    parser.add_argument(
+        "--model",
+        type=model_name,
+        choices=sorted(MODEL_PROFILES),
+        default=DEFAULT_MODEL,
+        help=f"uses {DEFAULT_MODEL} when omitted or empty",
+    )
     parser.add_argument(
         "--investigations",
         type=investigation_names,

@@ -6,8 +6,8 @@ branding:
 
 inputs:
   model:
-    description: Model profile to run. See the README for the available profiles.
-    default: gpt-6-luna
+    description: Model profile to run. Uses the default profile when empty.
+    default: ""
   project-dir:
     description: Directory holding the Spica resources, relative to the repository root.
     default: .
