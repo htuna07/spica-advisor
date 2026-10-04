@@ -1,0 +1,50 @@
+name: Spica Advisor
+description: Find security issues in Spica resources and report them in the job summary and a single GitHub issue.
+branding:
+  icon: shield
+  color: blue
+
+inputs:
+  model:
+    description: Model profile to run. See the README for the available profiles.
+    default: gpt-6-luna
+  project-dir:
+    description: Directory holding the Spica resources, relative to the repository root.
+    default: .
+  output-dir:
+    description: Directory for the JSON and Markdown reports.
+    default: output
+  investigations:
+    description: Comma-separated investigations to run. Runs all of them when empty.
+    default: ""
+  issue:
+    description: Keep the report in a single issue labeled spica-advisor.
+    default: "true"
+  openai-api-key:
+    description: OpenAI API key, required for OpenAI models.
+    default: ""
+  anthropic-api-key:
+    description: Anthropic API key, required for Claude models.
+    default: ""
+  github-token:
+    description: Token used to manage the report issue. Needs the issues write permission.
+    default: ${{ github.token }}
+
+runs:
+  using: docker
+  image: Dockerfile
+  args:
+    - --model
+    - ${{ inputs.model }}
+    - --project-dir
+    - ${{ inputs.project-dir }}
+    - --output-dir
+    - ${{ inputs.output-dir }}
+    - --investigations
+    - ${{ inputs.investigations }}
+    - --github-summary
+    - ${{ inputs.issue == 'true' && '--github-issue' || '--no-github-issue' }}
+  env:
+    OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+    ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+    GITHUB_TOKEN: ${{ inputs.github-token }}

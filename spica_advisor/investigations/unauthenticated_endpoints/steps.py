@@ -2,7 +2,7 @@ from spica_advisor.investigations.unauthenticated_endpoints.agents import ENDPOI
 from spica_advisor.investigations.unauthenticated_endpoints.context import UnauthenticatedEndpointsContext
 from spica_advisor.investigations.unauthenticated_endpoints.prompts import endpoint_risk_input
 from spica_advisor.log import LOGGER
-from spica_advisor.resources import load_functions
+from spica_advisor.resources import load_functions, resource_locations
 
 
 def is_public_endpoint(trigger):
@@ -44,10 +44,20 @@ def analyze_endpoints(context: UnauthenticatedEndpointsContext):
     context.function_risks = response.functions
 
 
+def function_report(function_risk, location):
+    return {
+        "function_id": function_risk.function_id,
+        "function_name": location.get("name"),
+        "path": location.get("path"),
+        "methods": [method.model_dump() for method in function_risk.methods],
+    }
+
+
 def report_unauthenticated_endpoints(context: UnauthenticatedEndpointsContext):
     analyzed_ids = {function["_id"] for function in context.analysis_inputs}
+    locations = resource_locations(context.project_dir, "function")
     context.report = [
-        function_risk.model_dump()
+        function_report(function_risk, locations.get(function_risk.function_id, {}))
         for function_risk in context.function_risks
         if function_risk.function_id in analyzed_ids and function_risk.methods
     ]

@@ -122,6 +122,8 @@ def test_reports_method_risks_grouped_by_analyzed_function(tmp_path):
     assert report == [
         {
             "function_id": "fn-1",
+            "function_name": "fn-1",
+            "path": "function/fn-1",
             "methods": [
                 {"name": "handler", "risk_level": "high", "reason": "writes bucket"},
                 {"name": "health", "risk_level": "low", "reason": "returns OK"},

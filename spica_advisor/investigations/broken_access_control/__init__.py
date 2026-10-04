@@ -1,5 +1,6 @@
 from spica_advisor.investigation import InvestigationBuilder
 from spica_advisor.investigations.broken_access_control.context import BrokenAccessControlContext
+from spica_advisor.investigations.broken_access_control.markdown import SECTION
 from spica_advisor.investigations.broken_access_control.steps import (
     evaluate_bucket_rules,
     find_bucket_accesses,
@@ -14,6 +15,7 @@ def build():
     return (
         InvestigationBuilder("broken-access-control")
         .with_context(BrokenAccessControlContext)
+        .with_section(SECTION)
         .step("read functions", read_functions)
         .step("find policy attachments", find_policy_attachments)
         .step("load relevant policies", load_relevant_policies)

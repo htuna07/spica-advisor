@@ -4,6 +4,7 @@ import yaml
 
 
 FUNCTION_EXTENSIONS = ("mjs", "js", "ts")
+RESOURCE_NAME_KEYS = {"bucket": "title", "env-var": "key", "function": "name", "policy": "name"}
 
 
 def read_schema(schema_path):
@@ -18,6 +19,18 @@ def load_schemas(path):
         if schema:
             schemas.append(schema)
     return schemas
+
+
+def resource_locations(project_dir, kind):
+    locations = {}
+    for schema_path in (project_dir / kind).rglob("schema.yaml"):
+        schema = read_schema(schema_path)
+        if schema and schema.get("_id"):
+            locations[schema["_id"]] = {
+                "name": schema.get(RESOURCE_NAME_KEYS[kind]),
+                "path": schema_path.parent.relative_to(project_dir).as_posix(),
+            }
+    return locations
 
 
 def read_function_source(folder):

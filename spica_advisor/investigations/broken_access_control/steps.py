@@ -5,7 +5,7 @@ from spica_advisor.investigations.broken_access_control.agents import BUCKET_ACL
 from spica_advisor.investigations.broken_access_control.context import BrokenAccessControlContext
 from spica_advisor.investigations.broken_access_control.prompts import ATTACHMENT_INPUT, bucket_acl_input
 from spica_advisor.log import LOGGER
-from spica_advisor.resources import load_buckets, load_functions, load_policies
+from spica_advisor.resources import load_buckets, load_functions, load_policies, resource_locations
 
 
 READ_ACTIONS = {"bucket:data:stream", "bucket:data:index", "bucket:data:show"}
@@ -93,6 +93,8 @@ def evaluate_bucket_rules(context: BrokenAccessControlContext):
 
 
 def map_findings_to_policies(context: BrokenAccessControlContext):
+    policy_locations = resource_locations(context.project_dir, "policy")
+    bucket_locations = resource_locations(context.project_dir, "bucket")
     report = []
     risky_bucket_ids = set()
     for policy in context.policies:
@@ -102,12 +104,19 @@ def map_findings_to_policies(context: BrokenAccessControlContext):
             for bucket_id in affected_bucket_ids(statement, context.buckets):
                 bucket_report = context.bucket_acl_reports[bucket_id]
                 access_report = {
+                    "access": acl_rule,
                     "row_level_security_status": bucket_report[acl_rule]["row_level_security_status"],
                     "reason": bucket_report[acl_rule]["reason"],
                     "includes_sensitive_information": bucket_report["includes_sensitive_information"],
                 }
-                if access_report["row_level_security_status"] != "applied" and access_report["includes_sensitive_information"]:
-                    affected_buckets.append({"_id": bucket_id, "report": access_report})
+                if access_report["row_level_security_status"] != "applied":
+                    bucket_location = bucket_locations.get(bucket_id, {})
+                    affected_buckets.append({
+                        "_id": bucket_id,
+                        "name": bucket_location.get("name"),
+                        "path": bucket_location.get("path"),
+                        "report": access_report,
+                    })
                     risky_bucket_ids.add(bucket_id)
 
             if affected_buckets:
@@ -117,8 +126,11 @@ def map_findings_to_policies(context: BrokenAccessControlContext):
                 })
 
         if affected_statements:
+            policy_location = policy_locations.get(policy.get("_id"), {})
             report.append({
                 "policy_id": policy.get("_id"),
+                "policy_name": policy_location.get("name"),
+                "path": policy_location.get("path"),
                 "affected_statements": affected_statements,
             })
 

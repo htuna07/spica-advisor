@@ -2,7 +2,7 @@ from spica_advisor.investigations.sensitive_env_vars.agents import SENSITIVENESS
 from spica_advisor.investigations.sensitive_env_vars.context import SensitiveEnvVarsContext
 from spica_advisor.investigations.sensitive_env_vars.prompts import sensitiveness_input
 from spica_advisor.log import LOGGER
-from spica_advisor.resources import load_env_vars
+from spica_advisor.resources import load_env_vars, resource_locations
 
 
 REPORTED_LEVELS = {"medium", "high"}
@@ -24,9 +24,14 @@ def assess_sensitiveness(context: SensitiveEnvVarsContext):
     }
 
 
+def env_var_report(env_var_id, location, report):
+    return {"_id": env_var_id, "name": location.get("name"), "path": location.get("path"), "report": report}
+
+
 def report_sensitive_env_vars(context: SensitiveEnvVarsContext):
+    locations = resource_locations(context.project_dir, "env-var")
     context.report = [
-        {"_id": env_var["_id"], "report": report}
+        env_var_report(env_var["_id"], locations.get(env_var["_id"], {}), report)
         for env_var in context.env_vars
         if (report := context.sensitiveness_reports.get(env_var["name"]))
         and report["sensitiveness_level"] in REPORTED_LEVELS

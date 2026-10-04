@@ -47,8 +47,18 @@ def test_reports_only_medium_and_high_env_vars(tmp_path):
     report = sensitive_env_vars.build().run(tmp_path / "demo", runner)
 
     assert sorted(report, key=lambda entry: entry["_id"]) == [
-        {"_id": "id-1", "report": {"sensitiveness_level": "high", "reason": "credential"}},
-        {"_id": "id-2", "report": {"sensitiveness_level": "medium", "reason": "personal data"}},
+        {
+            "_id": "id-1",
+            "name": "API_KEY",
+            "path": "env-var/API_KEY",
+            "report": {"sensitiveness_level": "high", "reason": "credential"},
+        },
+        {
+            "_id": "id-2",
+            "name": "ADMIN_EMAIL",
+            "path": "env-var/ADMIN_EMAIL",
+            "report": {"sensitiveness_level": "medium", "reason": "personal data"},
+        },
     ]
     assert runner.agents == [SENSITIVENESS_AGENT]
     assert "super-secret-value" not in runner.prompts[0]

@@ -4,11 +4,15 @@ from pathlib import Path
 import pytest
 
 from spica_advisor.investigation import InvestigationBuilder, InvestigationContext
+from spica_advisor.markdown import Section
 
 
 @dataclass
 class RecordingContext(InvestigationContext):
     calls: list[str] = field(default_factory=list)
+
+
+SECTION = Section(title="Demo", description="Demo findings.", columns=("Item",), rows=lambda report, links: [])
 
 
 def record(name):
@@ -19,18 +23,24 @@ def record(name):
 
 def test_build_requires_context_type():
     with pytest.raises(ValueError, match="no context type"):
-        InvestigationBuilder("demo").step("first", record("first")).build()
+        InvestigationBuilder("demo").with_section(SECTION).step("first", record("first")).build()
 
 
 def test_build_requires_at_least_one_step():
     with pytest.raises(ValueError, match="no steps"):
-        InvestigationBuilder("demo").with_context(RecordingContext).build()
+        InvestigationBuilder("demo").with_context(RecordingContext).with_section(SECTION).build()
+
+
+def test_build_requires_report_section():
+    with pytest.raises(ValueError, match="no report section"):
+        InvestigationBuilder("demo").with_context(RecordingContext).step("first", record("first")).build()
 
 
 def test_build_rejects_duplicate_step_names():
     builder = (
         InvestigationBuilder("demo")
         .with_context(RecordingContext)
+        .with_section(SECTION)
         .step("same", record("a"))
         .step("same", record("b"))
     )
@@ -45,6 +55,7 @@ def test_run_executes_steps_in_order_on_shared_context_and_returns_report():
     investigation = (
         InvestigationBuilder("demo")
         .with_context(RecordingContext)
+        .with_section(SECTION)
         .step("first", record("first"))
         .step("second", record("second"))
         .step("finish", finish)
@@ -63,6 +74,7 @@ def test_each_run_gets_a_fresh_context():
     investigation = (
         InvestigationBuilder("demo")
         .with_context(RecordingContext)
+        .with_section(SECTION)
         .step("first", record("first"))
         .step("finish", finish)
         .build()
