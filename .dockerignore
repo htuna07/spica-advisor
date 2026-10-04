@@ -1,0 +1,5 @@
+*
+!requirements.txt
+!main.py
+!spica_advisor/
+spica_advisor/**/__pycache__
