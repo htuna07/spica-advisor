@@ -1,3 +1,4 @@
+anthropic==0.125.0
 openai==3.24.0
 openai-agents==0.23.1
 python-dotenv==1.2.4

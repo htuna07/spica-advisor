@@ -5,6 +5,7 @@ from pprint import pformat
 
 from spica_advisor.investigations import INVESTIGATIONS
 from spica_advisor.log import LOGGER, configure_logging
+from spica_advisor.model_profiles import DEFAULT_MODEL, MODEL_PROFILES
 from spica_advisor.report import write_report
 from spica_advisor.resources import RESOURCES_ROOT
 from spica_advisor.runner import AgentRunner
@@ -32,6 +33,7 @@ def parse_args():
     parser.add_argument(
         "--log-format", choices=("text", "json"), default="text")
     parser.add_argument("--project", default=DEFAULT_PROJECT)
+    parser.add_argument("--model", choices=sorted(MODEL_PROFILES), default=DEFAULT_MODEL)
     parser.add_argument(
         "--investigations",
         type=investigation_names,
@@ -52,7 +54,7 @@ def selected_investigations(names):
 
 def run_investigation(investigation, project, runner):
     report = investigation.run(RESOURCES_ROOT / project, runner)
-    write_report(project, investigation.name, report)
+    write_report(project, runner.profile.name, investigation.name, report)
     if LOGGER.isEnabledFor(logging.DEBUG):
         LOGGER.debug("Full %s report:\n%s",
                      investigation.name, pformat(report))
@@ -62,7 +64,7 @@ def run():
     args = parse_args()
     configure_logging(args.debug, args.log_file, args.log_format)
     try:
-        runner = AgentRunner.from_env()
+        runner = AgentRunner.from_env(MODEL_PROFILES[args.model])
     except Exception:
         LOGGER.exception("Failed to initialize agent runner")
         raise SystemExit(1)

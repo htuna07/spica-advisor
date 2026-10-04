@@ -1,27 +1,28 @@
-from agents import Agent, ModelSettings, RunConfig, Runner, set_default_openai_client
+from agents import Agent, RunConfig, Runner, set_default_openai_client
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
-from openai.types.shared import Reasoning
 
 from spica_advisor.hooks import InteractionLoggingHooks
+from spica_advisor.model_profiles import ModelProfile
 
 
-MODEL = "gpt-6-luna"
+MAX_TURNS = 10
 
 
 class AgentRunner:
-    def __init__(self, model=MODEL):
+    def __init__(self, profile: ModelProfile):
+        self.profile = profile
         self.run_config = RunConfig(
-            model=model,
-            model_settings=ModelSettings(reasoning=Reasoning(summary="auto")),
+            model=profile.build_model(),
+            model_settings=profile.settings,
         )
         self.hooks = InteractionLoggingHooks()
 
     @classmethod
-    def from_env(cls):
+    def from_env(cls, profile):
         load_dotenv()
         set_default_openai_client(AsyncOpenAI())
-        return cls()
+        return cls(profile)
 
     def run(self, agent: Agent, prompt, context=None):
         return Runner.run_sync(
@@ -29,6 +30,7 @@ class AgentRunner:
             prompt,
             context=context,
             hooks=self.hooks,
-            auto_previous_response_id=True,
+            auto_previous_response_id=self.profile.uses_responses_api,
+            max_turns=MAX_TURNS,
             run_config=self.run_config,
         ).final_output
