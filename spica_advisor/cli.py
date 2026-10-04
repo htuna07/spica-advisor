@@ -1,6 +1,5 @@
 import argparse
 import logging
-from dataclasses import asdict
 from pathlib import Path
 from pprint import pformat
 
@@ -8,7 +7,7 @@ from spica_advisor.investigations import INVESTIGATIONS
 from spica_advisor.log import LOGGER, configure_logging
 from spica_advisor.metrics import totals
 from spica_advisor.model_profiles import DEFAULT_MODEL, MODEL_PROFILES
-from spica_advisor.report import write_metrics, write_report
+from spica_advisor.report import write_report
 from spica_advisor.resources import RESOURCES_ROOT
 from spica_advisor.runner import AgentRunner
 
@@ -62,14 +61,6 @@ def run_investigation(investigation, context, project, model):
                      investigation.name, pformat(context.report))
 
 
-def investigation_metrics(context, calls):
-    return {
-        "step_seconds": context.step_seconds,
-        "totals": totals(calls),
-        "calls": [asdict(call) for call in calls],
-    }
-
-
 def log_totals(investigation_name, usage):
     LOGGER.info(
         "[%s] %d LLM calls (%d failed), %d requests, %d input tokens (%d cached), "
@@ -96,7 +87,6 @@ def run():
         raise SystemExit(1)
 
     failed = []
-    metrics = {}
     for investigation in selected_investigations(args.investigations):
         context = investigation.create_context(RESOURCES_ROOT / args.project, runner)
         first_call = len(runner.calls)
@@ -105,10 +95,8 @@ def run():
         except Exception:
             LOGGER.exception("Investigation %s failed", investigation.name)
             failed.append(investigation.name)
-        metrics[investigation.name] = investigation_metrics(context, runner.calls[first_call:])
-        log_totals(investigation.name, metrics[investigation.name]["totals"])
+        log_totals(investigation.name, totals(runner.calls[first_call:]))
 
-    write_metrics(args.project, args.model, metrics)
     if failed:
         LOGGER.error("Failed investigations: %s", ", ".join(failed))
         raise SystemExit(1)

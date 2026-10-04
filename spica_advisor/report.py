@@ -19,7 +19,3 @@ def write_json(path, data):
 
 def write_report(project, model, investigation_name, report):
     write_json(output_dir(project, model) / f"{investigation_name}.json", report)
-
-
-def write_metrics(project, model, metrics):
-    write_json(output_dir(project, model) / "metrics.json", metrics)

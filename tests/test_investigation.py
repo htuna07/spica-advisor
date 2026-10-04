@@ -70,23 +70,3 @@ def test_each_run_gets_a_fresh_context():
 
     assert investigation.run(Path("p"), runner=None) == ["first"]
     assert investigation.run(Path("p"), runner=None) == ["first"]
-
-
-def test_execute_records_duration_of_each_completed_step():
-    def fail(context):
-        raise RuntimeError("boom")
-
-    investigation = (
-        InvestigationBuilder("demo")
-        .with_context(RecordingContext)
-        .step("first", record("first"))
-        .step("fail", fail)
-        .build()
-    )
-    context = investigation.create_context(Path("p"), runner=None)
-
-    with pytest.raises(RuntimeError):
-        investigation.execute(context)
-
-    assert list(context.step_seconds) == ["first"]
-    assert context.step_seconds["first"] >= 0
