@@ -6,7 +6,8 @@ and evaluate their risk, return report in desired format.
 2- Check whether their implementation starts with any authentication or
    authorization checks. Don't dive into auth implementations, just determine
    any sign of auth checks.
-3- Filter if they don't have auth implementation explained in step 2.
+3- Report ONLY the functions that do NOT start with an auth check from step 2.
+   Leave out every function that has one.
 4- Evaluate their risk by the following criteria:
    - high: Code performs CRUD on any database, bucket, storage etc.
    - medium: Code performs some calculations, tries to validate some logic,
