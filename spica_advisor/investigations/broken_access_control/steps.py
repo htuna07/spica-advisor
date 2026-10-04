@@ -1,0 +1,123 @@
+import re
+from collections.abc import Iterable
+
+from spica_advisor.investigations.broken_access_control.context import BrokenAccessControlContext
+from spica_advisor.investigations.broken_access_control.models import BucketAclReport, ReportResponse
+from spica_advisor.investigations.broken_access_control.prompts import attachment_prompt, bucket_acl_prompt
+from spica_advisor.log import LOGGER
+from spica_advisor.resources import load_buckets, load_functions, load_policies
+
+
+READ_ACTIONS = {"bucket:data:stream", "bucket:data:index", "bucket:data:show"}
+WRITE_ACTIONS = {"bucket:data:update", "bucket:data:delete"}
+
+
+def clean(value):
+    return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
+
+
+def acl_rule_for_action(action):
+    if action in READ_ACTIONS:
+        return "read"
+    if action in WRITE_ACTIONS:
+        return "write"
+    return None
+
+
+def affected_bucket_ids(statement, buckets):
+    resource = statement.get("resource", {})
+    include = resource.get("include", [])
+    exclude = set(resource.get("exclude", []))
+    if "*" in include:
+        return [bucket_id for bucket_id in buckets if bucket_id not in exclude]
+    return [bucket_id for bucket_id in include if bucket_id in buckets and bucket_id not in exclude]
+
+
+def bucket_data_statements(policy) -> Iterable[tuple[int, dict, str]]:
+    for statement_index, statement in enumerate(policy.get("statement", [])):
+        acl_rule = acl_rule_for_action(statement.get("action"))
+        if statement.get("module") == "bucket:data" and acl_rule:
+            yield statement_index, statement, acl_rule
+
+
+def read_functions(context: BrokenAccessControlContext):
+    context.functions = load_functions(context.project)
+    LOGGER.debug("Discovered %d function files", len(context.functions))
+
+
+def find_policy_attachments(context: BrokenAccessControlContext):
+    response = context.llm.parse(attachment_prompt(context.functions), ReportResponse)
+    context.attachment_reports = response.reports
+    attachment_files = {
+        file
+        for report in context.attachment_reports
+        for file in report.attachment_files
+    }
+    LOGGER.info("Found %d functions that attach policies to users", len(attachment_files))
+
+
+def load_relevant_policies(context: BrokenAccessControlContext):
+    policies = load_policies(context.project)
+    context.policies = [
+        policy for policy in policies
+        if any(
+            policy.get("_id") == report.policy_id
+            or clean(policy.get("name")) == clean(report.policy_name)
+            for report in context.attachment_reports
+        )
+        and any(statement.get("module") == "bucket:data" for statement in policy.get("statement", []))
+    ]
+    LOGGER.debug("Loaded %d policies; %d are relevant", len(policies), len(context.policies))
+    LOGGER.info("Found %d policies that have access to buckets", len(context.policies))
+
+
+def find_bucket_accesses(context: BrokenAccessControlContext):
+    context.buckets = load_buckets(context.project)
+    context.bucket_ids = list(dict.fromkeys(
+        bucket_id
+        for policy in context.policies
+        for _, statement, _ in bucket_data_statements(policy)
+        for bucket_id in affected_bucket_ids(statement, context.buckets)
+    ))
+    LOGGER.info("Found %d buckets accessed by relevant policies", len(context.bucket_ids))
+
+
+def evaluate_bucket_rules(context: BrokenAccessControlContext):
+    context.bucket_acl_reports = {
+        bucket_id: context.llm.parse(bucket_acl_prompt(context.buckets[bucket_id]), BucketAclReport).model_dump()
+        for bucket_id in context.bucket_ids
+    }
+
+
+def map_findings_to_policies(context: BrokenAccessControlContext):
+    report = []
+    risky_bucket_ids = set()
+    for policy in context.policies:
+        affected_statements = []
+        for statement_index, statement, acl_rule in bucket_data_statements(policy):
+            affected_buckets = []
+            for bucket_id in affected_bucket_ids(statement, context.buckets):
+                bucket_report = context.bucket_acl_reports[bucket_id]
+                access_report = {
+                    "row_level_security_status": bucket_report[acl_rule]["row_level_security_status"],
+                    "reason": bucket_report[acl_rule]["reason"],
+                    "includes_sensitive_information": bucket_report["includes_sensitive_information"],
+                }
+                if access_report["row_level_security_status"] != "applied" and access_report["includes_sensitive_information"]:
+                    affected_buckets.append({"_id": bucket_id, "report": access_report})
+                    risky_bucket_ids.add(bucket_id)
+
+            if affected_buckets:
+                affected_statements.append({
+                    "statement_index": statement_index,
+                    "affected_buckets": affected_buckets,
+                })
+
+        if affected_statements:
+            report.append({
+                "policy_id": policy.get("_id"),
+                "affected_statements": affected_statements,
+            })
+
+    LOGGER.info("Found %d buckets with ACL issues", len(risky_bucket_ids))
+    context.report = report
