@@ -20,6 +20,17 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(event, default=str)
 
 
+class TextFormatter(logging.Formatter):
+    def __init__(self):
+        super().__init__("%(asctime)s %(levelname)s %(message)s")
+
+    def format(self, record):
+        text = super().format(record)
+        if hasattr(record, "payload"):
+            text += "\n" + json.dumps(record.payload, indent=2, default=str)
+        return text
+
+
 def configure_logging(debug, log_file, log_format):
     handler = (
         logging.FileHandler(log_file, encoding="utf-8")
@@ -29,7 +40,7 @@ def configure_logging(debug, log_file, log_format):
     handler.setFormatter(
         JsonFormatter()
         if log_format == "json"
-        else logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+        else TextFormatter()
     )
     LOGGER.handlers.clear()
     LOGGER.addHandler(handler)

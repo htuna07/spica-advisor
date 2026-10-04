@@ -3,13 +3,13 @@ from collections.abc import Iterable
 
 from spica_advisor.investigations.broken_access_control.agents import BUCKET_ACL_AGENT, POLICY_ATTACHMENT_AGENT
 from spica_advisor.investigations.broken_access_control.context import BrokenAccessControlContext
-from spica_advisor.investigations.broken_access_control.prompts import attachment_input, bucket_acl_input
+from spica_advisor.investigations.broken_access_control.prompts import ATTACHMENT_INPUT, bucket_acl_input
 from spica_advisor.log import LOGGER
 from spica_advisor.resources import load_buckets, load_functions, load_policies
 
 
 READ_ACTIONS = {"bucket:data:stream", "bucket:data:index", "bucket:data:show"}
-WRITE_ACTIONS = {"bucket:data:update", "bucket:data:delete"}
+WRITE_ACTIONS = {"bucket:data:create", "bucket:data:update", "bucket:data:delete"}
 
 
 def clean(value):
@@ -40,31 +40,34 @@ def bucket_data_statements(policy) -> Iterable[tuple[int, dict, str]]:
             yield statement_index, statement, acl_rule
 
 
+def matches_report(policy, report):
+    return bool(
+        (report.policy_id and policy.get("_id") == report.policy_id)
+        or (report.policy_name and clean(policy.get("name")) == clean(report.policy_name))
+    )
+
+
 def read_functions(context: BrokenAccessControlContext):
     context.functions = load_functions(context.project)
-    LOGGER.debug("Discovered %d function files", len(context.functions))
+    LOGGER.debug("Discovered %d functions", len(context.functions))
 
 
 def find_policy_attachments(context: BrokenAccessControlContext):
-    response = context.runner.run(POLICY_ATTACHMENT_AGENT, attachment_input(context.functions))
+    response = context.runner.run(
+        POLICY_ATTACHMENT_AGENT,
+        ATTACHMENT_INPUT,
+        context=context.functions,
+    )
     context.attachment_reports = response.reports
-    attachment_files = {
-        file
-        for report in context.attachment_reports
-        for file in report.attachment_files
-    }
-    LOGGER.info("Found %d functions that attach policies to users", len(attachment_files))
+    attaching_function_ids = {report.attachment.function_id for report in context.attachment_reports}
+    LOGGER.info("Found %d functions that attach policies to users", len(attaching_function_ids))
 
 
 def load_relevant_policies(context: BrokenAccessControlContext):
     policies = load_policies(context.project)
     context.policies = [
         policy for policy in policies
-        if any(
-            policy.get("_id") == report.policy_id
-            or clean(policy.get("name")) == clean(report.policy_name)
-            for report in context.attachment_reports
-        )
+        if any(matches_report(policy, report) for report in context.attachment_reports)
         and any(statement.get("module") == "bucket:data" for statement in policy.get("statement", []))
     ]
     LOGGER.debug("Loaded %d policies; %d are relevant", len(policies), len(context.policies))

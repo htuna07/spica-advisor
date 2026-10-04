@@ -72,11 +72,11 @@ class FakeRunner:
         return self.response
 
 
-def test_load_function_definitions_includes_id_schema_and_content(tmp_path, monkeypatch):
+def test_load_functions_includes_id_schema_and_content(tmp_path, monkeypatch):
     monkeypatch.setattr(resources, "RESOURCES_ROOT", tmp_path)
     write_function(tmp_path, "demo", "fn-1", PUBLIC_HTTP, "export function handler() {}")
 
-    [definition] = resources.load_function_definitions("demo")
+    [definition] = resources.load_functions("demo")
 
     assert definition["_id"] == "fn-1"
     assert definition["schema"]["triggers"]["handler"]["type"] == "http"

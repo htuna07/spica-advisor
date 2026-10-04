@@ -2,7 +2,7 @@ from spica_advisor.investigations.unauthenticated_endpoints.agents import ENDPOI
 from spica_advisor.investigations.unauthenticated_endpoints.context import UnauthenticatedEndpointsContext
 from spica_advisor.investigations.unauthenticated_endpoints.prompts import endpoint_risk_input
 from spica_advisor.log import LOGGER
-from spica_advisor.resources import load_function_definitions
+from spica_advisor.resources import load_functions
 
 
 def is_public_endpoint(trigger):
@@ -18,7 +18,7 @@ def has_public_endpoint(schema):
 
 
 def read_functions(context: UnauthenticatedEndpointsContext):
-    context.functions = load_function_definitions(context.project)
+    context.functions = load_functions(context.project)
     LOGGER.info("Discovered %d functions", len(context.functions))
 
 

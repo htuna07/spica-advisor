@@ -3,16 +3,16 @@ from typing import Literal
 from pydantic import BaseModel
 
 
-class FileReference(BaseModel):
-    file_name: str
-    line_numbers: list[int]
+class CodeLocation(BaseModel):
+    function_id: str
+    match: str
 
 
 class Report(BaseModel):
-    policy_id: str
-    policy_name: str
-    attachment_files: list[str]
-    references: list[FileReference]
+    attachment: CodeLocation
+    definition: CodeLocation
+    policy_id: str | None
+    policy_name: str | None
 
 
 class ReportResponse(BaseModel):

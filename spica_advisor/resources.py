@@ -1,4 +1,3 @@
-import glob
 from pathlib import Path
 
 import yaml
@@ -22,19 +21,6 @@ def load_schemas(path):
     return schemas
 
 
-def load_functions(project):
-    files = [
-        file
-        for extension in FUNCTION_EXTENSIONS
-        for file in glob.glob(f"{RESOURCES_ROOT}/{project}/function/**/*.{extension}", recursive=True)
-    ]
-    functions = []
-    for file in files:
-        with open(file, encoding="utf-8") as source:
-            functions.append({"file": file, "content": source.read()})
-    return functions
-
-
 def read_function_source(folder):
     return "\n".join(
         path.read_text(encoding="utf-8")
@@ -43,7 +29,7 @@ def read_function_source(folder):
     )
 
 
-def load_function_definitions(project):
+def load_functions(project):
     definitions = []
     for schema_path in (RESOURCES_ROOT / project / "function").rglob("schema.yaml"):
         schema = read_schema(schema_path)
