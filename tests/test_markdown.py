@@ -18,7 +18,15 @@ ENDPOINT_REPORT = [
     ]},
 ]
 ACCESS_REPORT = [
-    {"policy_id": "p1", "policy_name": "Customer", "path": "policy/Customer", "affected_statements": [
+    {"policy_id": "p1", "policy_name": "Customer", "path": "policy/Customer", "attachments": [
+        {"attachment": {"function_id": "f1", "function_name": "Signup", "path": "function/Signup",
+                        "match": "await Auth.policy.attach(\n    user._id,\n    POLICY || fallback\n);"},
+         "definition": {"function_id": "f1", "function_name": "Signup", "path": "function/Signup",
+                        "match": "const POLICY = process.env.CUSTOMER_POLICY;"}},
+        {"attachment": {"function_id": "f2", "function_name": "Import", "path": "function/Import", "match": "x" * 200},
+         "definition": {"function_id": "f3", "function_name": "Constants", "path": "function/Constants",
+                        "match": "export const POLICY = 'p1';"}},
+    ], "affected_statements": [
         {"statement_index": 2, "affected_buckets": [
             {"_id": "b1", "name": "Payment Methods", "path": "bucket/Payment-Methods", "report": {
                 "access": "read", "row_level_security_status": "applied_but_in_risk",
@@ -57,8 +65,27 @@ def test_report_shows_paths_when_not_on_github():
     report = render_report([(ACCESS_SECTION, ACCESS_REPORT)], ReportMetadata(model="m"))
 
     assert ("| 🟠 Medium | Customer (`policy/Customer`) | `statement[2]` "
-            "| Payment Methods (`bucket/Payment-Methods`) | Read | Applied, but at risk | Yes "
+            "| Payment Methods (`bucket/Payment-Methods`) | Read | Yes | Applied, but at risk "
             "| filter can be bypassed |") in report.text
+
+
+def test_access_section_lists_where_policies_are_attached_and_defined():
+    report = render_report([(ACCESS_SECTION, ACCESS_REPORT)], ReportMetadata(model="m"))
+
+    attachments = report.text.split("#### Where these policies are attached to users\n\n")[1]
+    assert attachments.startswith("| Policy | Attached in | Attaching code | Defined in | Defining code |")
+    assert ("| Customer (`policy/Customer`) | Signup (`function/Signup`) "
+            "| `await Auth.policy.attach( user._id, POLICY \\|\\| fallback );` "
+            "| Signup (`function/Signup`) | `const POLICY = process.env.CUSTOMER_POLICY;` |") in attachments
+    assert f"| Import (`function/Import`) | `{'x' * 149}…` | Constants (`function/Constants`) |" in attachments
+
+
+def test_attachments_table_is_omitted_without_attachments():
+    access_report = [{**ACCESS_REPORT[0], "attachments": []}]
+
+    report = render_report([(ACCESS_SECTION, access_report)], ReportMetadata(model="m"))
+
+    assert "Where these policies are attached" not in report.text
 
 
 @pytest.mark.parametrize(("status", "sensitive", "label"), [
@@ -70,7 +97,7 @@ def test_report_shows_paths_when_not_on_github():
 def test_access_severity_rises_with_bucket_sensitivity(status, sensitive, label):
     bucket = {"_id": "b1", "name": "B", "path": "bucket/B", "report": {
         "access": "write", "row_level_security_status": status, "reason": "r", "includes_sensitive_information": sensitive}}
-    access_report = [{"policy_id": "p1", "policy_name": "P", "path": "policy/P",
+    access_report = [{"policy_id": "p1", "policy_name": "P", "path": "policy/P", "attachments": [],
                       "affected_statements": [{"statement_index": 0, "affected_buckets": [bucket]}]}]
 
     report = render_report([(ACCESS_SECTION, access_report)], ReportMetadata(model="m"))

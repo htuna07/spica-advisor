@@ -47,6 +47,32 @@ def matches_report(policy, report):
     )
 
 
+def code_location(location, function_locations):
+    function = function_locations.get(location.function_id, {})
+    return {
+        "function_id": location.function_id,
+        "function_name": function.get("name"),
+        "path": function.get("path"),
+        "match": location.match,
+    }
+
+
+def policy_attachments(policy, attachment_reports, function_locations):
+    unique_reports = {
+        (report.attachment.function_id, report.attachment.match,
+         report.definition.function_id, report.definition.match): report
+        for report in attachment_reports
+        if matches_report(policy, report)
+    }
+    return [
+        {
+            "attachment": code_location(report.attachment, function_locations),
+            "definition": code_location(report.definition, function_locations),
+        }
+        for report in unique_reports.values()
+    ]
+
+
 def read_functions(context: BrokenAccessControlContext):
     context.functions = load_functions(context.project_dir)
     LOGGER.debug("Discovered %d functions", len(context.functions))
@@ -97,6 +123,7 @@ def evaluate_bucket_rules(context: BrokenAccessControlContext):
 def map_findings_to_policies(context: BrokenAccessControlContext):
     policy_locations = resource_locations(context.project_dir, "policy")
     bucket_locations = resource_locations(context.project_dir, "bucket")
+    function_locations = resource_locations(context.project_dir, "function")
     report = []
     risky_bucket_ids = set()
     for policy in context.policies:
@@ -133,6 +160,7 @@ def map_findings_to_policies(context: BrokenAccessControlContext):
                 "policy_id": policy.get("_id"),
                 "policy_name": policy_location.get("name"),
                 "path": policy_location.get("path"),
+                "attachments": policy_attachments(policy, context.attachment_reports, function_locations),
                 "affected_statements": affected_statements,
             })
 

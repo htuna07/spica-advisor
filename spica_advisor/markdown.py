@@ -47,6 +47,7 @@ class Section:
     description: str
     columns: tuple[str, ...]
     rows: Callable[[Any, Links], list[Row]]
+    appendix: Callable[[Any, Links], str] | None = None
 
 
 @dataclass(frozen=True)
@@ -94,14 +95,14 @@ def overview(results):
     return summary
 
 
-def render_section(section, rows):
+def render_section(section, rows, appendix=""):
     if rows is None:
         body = FAILED_SECTION
     elif not rows:
         body = "No findings."
     else:
         body = table(["Severity", *section.columns], [[SEVERITY_LABELS[row.severity], *row.cells] for row in rows])
-    return f"### {section.title}\n\n{section.description}\n\n{body}"
+    return "\n\n".join(part for part in (f"### {section.title}", section.description, body, appendix) if part)
 
 
 def sorted_rows(rows):
@@ -114,10 +115,14 @@ def render_report(reports, metadata):
         (section, None if report is None else sorted_rows(section.rows(report, links)))
         for section, report in reports
     ]
+    appendices = [
+        section.appendix(report, links) if section.appendix and rows else ""
+        for (section, report), (_, rows) in zip(reports, results)
+    ]
     text = "\n\n".join([
         header(metadata),
         overview(results),
-        *(render_section(section, rows) for section, rows in results),
+        *(render_section(section, rows, appendix) for (section, rows), appendix in zip(results, appendices)),
         DISCLAIMER,
     ]) + "\n"
     return MarkdownReport(

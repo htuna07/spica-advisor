@@ -1,5 +1,6 @@
 from spica_advisor.investigations import broken_access_control
 from spica_advisor.investigations.broken_access_control.context import BrokenAccessControlContext
+from spica_advisor.investigations.broken_access_control.models import CodeLocation, Report
 from spica_advisor.investigations.broken_access_control.steps import map_findings_to_policies
 
 
@@ -28,11 +29,28 @@ def test_reports_buckets_without_effective_row_level_security_whatever_their_sen
     assert [bucket["_id"] for bucket in statement["affected_buckets"]] == ["b1", "b2"]
 
 
+def attachment(function_id, match, definition_match="const POLICY = 'p1';", policy_id=None, policy_name=None):
+    return Report(
+        attachment=CodeLocation(function_id=function_id, match=match),
+        definition=CodeLocation(function_id="f3", match=definition_match),
+        policy_id=policy_id,
+        policy_name=policy_name,
+    )
+
+
 def test_findings_name_policies_and_buckets_with_their_paths(tmp_path):
+    write_schema(tmp_path, "function/Signup", "_id: f1\nname: Signup\n")
+    write_schema(tmp_path, "function/Constants", "_id: f3\nname: Constants\n")
     write_schema(tmp_path, "policy/Customer", "_id: p1\nname: Customer Policy\n")
     write_schema(tmp_path, "bucket/Payment-Methods", "_id: b1\ntitle: Payment Methods\n")
     context = BrokenAccessControlContext(project_dir=tmp_path, runner=None)
-    context.policies = [{"_id": "p1", "statement": [
+    context.attachment_reports = [
+        attachment("f1", "Auth.policy.attach(id, POLICY)", policy_id="p1"),
+        attachment("f1", "Auth.policy.attach(id, POLICY)", policy_name="Customer Policy"),
+        attachment("f1", "Auth.policy.attach(id, POLICY)", "const POLICY = process.env.P;", policy_id="p1"),
+        attachment("f2", "Auth.policy.attach(id, OTHER)", policy_id="p2"),
+    ]
+    context.policies = [{"_id": "p1", "name": "Customer Policy", "statement": [
         {"module": "bucket:data", "action": "bucket:data:index", "resource": {"include": ["b1"]}},
     ]}]
     context.buckets = {"b1": {"_id": "b1"}}
@@ -48,6 +66,20 @@ def test_findings_name_policies_and_buckets_with_their_paths(tmp_path):
         "policy_id": "p1",
         "policy_name": "Customer Policy",
         "path": "policy/Customer",
+        "attachments": [
+            {
+                "attachment": {"function_id": "f1", "function_name": "Signup", "path": "function/Signup",
+                               "match": "Auth.policy.attach(id, POLICY)"},
+                "definition": {"function_id": "f3", "function_name": "Constants", "path": "function/Constants",
+                               "match": "const POLICY = 'p1';"},
+            },
+            {
+                "attachment": {"function_id": "f1", "function_name": "Signup", "path": "function/Signup",
+                               "match": "Auth.policy.attach(id, POLICY)"},
+                "definition": {"function_id": "f3", "function_name": "Constants", "path": "function/Constants",
+                               "match": "const POLICY = process.env.P;"},
+            },
+        ],
         "affected_statements": [{"statement_index": 0, "affected_buckets": [{
             "_id": "b1",
             "name": "Payment Methods",
