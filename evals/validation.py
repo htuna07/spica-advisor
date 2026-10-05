@@ -4,8 +4,7 @@ import yaml
 from pydantic import ValidationError
 
 from evals.cases import LABEL_FILES
-from evals.inputs import public_handler_names
-from spica_advisor.investigations.unauthenticated_endpoints.steps import has_public_endpoint
+from spica_advisor.investigations.unauthenticated_endpoints.handlers import has_public_endpoint, public_handler_names
 from spica_advisor.resources import load_buckets, load_env_vars, load_functions
 
 

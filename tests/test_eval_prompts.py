@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from evals.cli import prompt_selection
-from evals.inputs import endpoint_prompts_with_handler_names, exported_names
+from evals.inputs import endpoint_prompts_without_handler_names
 from evals.prompts import BASELINE, describe_variant, load_variants
 from spica_advisor.investigations.unauthenticated_endpoints.agents import ENDPOINT_RISK_AGENT
 
@@ -38,11 +38,11 @@ def test_variant_replaces_instructions_and_keeps_the_agent_otherwise(tmp_path):
 
 
 def test_input_only_variant_keeps_the_baseline_instructions(tmp_path):
-    write_variant(tmp_path, "names", "input: handler-names\n")
+    write_variant(tmp_path, "names", "input: source-only\n")
 
     details = describe_variant(TASK, load_variants(TASK, tmp_path)["names"])
 
-    assert details["input"] == "handler-names"
+    assert details["input"] == "source-only"
     assert details["instructions"] == ENDPOINT_RISK_AGENT.instructions
     assert details["diff"] == []
 
@@ -82,62 +82,12 @@ def test_prompt_selection_parses_task_and_variants():
         prompt_selection("unauthenticated_endpoints")
 
 
-def test_handler_names_input_explains_the_default_export():
-    schema = {"triggers": {
-        "default": {"type": "http", "active": True, "options": {}},
-        "report": {"type": "http", "active": True, "options": {}},
-        "nightly": {"type": "schedule", "active": True},
-    }}
-    source = "export default () => {}\nexport function report(req, res) {}\n"
-    context = SimpleNamespace(public_functions=[{"_id": "fn-1", "schema": schema, "content": source}])
-
-    [prompt] = endpoint_prompts_with_handler_names(context)
-
-    assert "http_handlers: default (the default export), report\n" in prompt
-
-
-def http_trigger():
-    return {"type": "http", "active": True, "options": {}}
-
-
-@pytest.mark.parametrize(("source", "names"), [
-    ("export async function create(req, res) {}", {"create"}),
-    ("export function* stream() {}\nexport const list = async (req, res) => {}", {"stream", "list"}),
-    ("function a() {}\nfunction b() {}\nexport { a, b as renamed }", {"a", "renamed"}),
-    ("export default async function (req, res) {}", {"default"}),
-    ("const handler = () => {};\nexport { handler as default };", {"default"}),
-    ("function create(req, res) {}", set()),
-])
-def test_exported_names_cover_the_esm_export_forms(source, names):
-    assert exported_names(source) == names
-
-
-def test_handler_names_input_lists_only_exported_handlers():
-    schema = {"triggers": {"default": http_trigger(), "create": http_trigger(), "missing": http_trigger()}}
+def test_source_only_input_rebuilds_the_legacy_prompt_input():
+    schema = {"triggers": {"create": {"type": "http", "active": True, "options": {}}}}
     context = SimpleNamespace(public_functions=[
         {"_id": "fn-1", "schema": schema, "content": "export function create(req, res) {}"},
     ])
 
-    [prompt] = endpoint_prompts_with_handler_names(context)
+    [prompt] = endpoint_prompts_without_handler_names(context)
 
-    assert "http_handlers: create\n" in prompt
-
-
-def test_handler_names_input_skips_functions_whose_triggers_have_no_handler():
-    context = SimpleNamespace(public_functions=[
-        {"_id": "fn-library", "schema": {"triggers": {"default": http_trigger()}}, "content": "export const KEY = 1;"},
-        {"_id": "fn-api", "schema": {"triggers": {"list": http_trigger()}}, "content": "export function list(req, res) {}"},
-    ])
-
-    [prompt] = endpoint_prompts_with_handler_names(context)
-
-    assert "fn-library" not in prompt
-    assert "function_id: fn-api" in prompt
-
-
-def test_handler_names_input_is_empty_when_no_function_serves_a_handler():
-    context = SimpleNamespace(public_functions=[
-        {"_id": "fn-library", "schema": {"triggers": {"default": http_trigger()}}, "content": "export const KEY = 1;"},
-    ])
-
-    assert endpoint_prompts_with_handler_names(context) == []
+    assert prompt == "Functions:\nfunction_id: fn-1\n```\nexport function create(req, res) {}\n```"

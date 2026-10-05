@@ -48,14 +48,14 @@ evals/prompts/<task>/<variant>.yaml
   description: one line shown on the report and cases pages
   instructions: |      # optional; replaces the agent's instructions, defaults to the production ones
     ...
-  input: handler-names # optional; a named input builder from TASKS[<task>].inputs, defaults to the production input
+  input: source-only   # optional; a named input builder from TASKS[<task>].inputs, defaults to the production input
 ```
 
 `baseline` is built in: it is always the prompt the advisor ships with, so a file of that name is rejected. Agents
 left out of `--prompts` run with baseline. The report shows each variant's instructions as a diff against baseline.
-Input builders live in `evals/inputs.py`; they change what the agent is shown, such as listing each function's HTTP
-handler names. To ship a winning variant, copy its instructions into the agent's `prompts.py` and move its input
-builder into the investigation's steps.
+Input builders live in `evals/inputs.py`; they change what the agent is shown. `legacy` uses `source-only` to rebuild
+the endpoint agent's input from before it was given each function's HTTP handler names. To ship a winning variant,
+copy its instructions into the agent's `prompts.py` and move its input builder into the investigation's steps.
 
 ## Case layout
 

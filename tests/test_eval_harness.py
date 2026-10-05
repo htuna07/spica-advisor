@@ -249,7 +249,7 @@ def prompts_root(tmp_path):
     folder = tmp_path / "prompts" / "unauthenticated_endpoints"
     folder.mkdir(parents=True)
     (folder / "strict.yaml").write_text(
-        "description: Stricter.\ninput: handler-names\ninstructions: Only the listed handlers.\n", encoding="utf-8",
+        "description: Stricter.\ninput: source-only\ninstructions: Only the listed handlers.\n", encoding="utf-8",
     )
     return tmp_path / "prompts"
 
@@ -264,7 +264,8 @@ def test_variant_run_swaps_instructions_and_input_and_tags_the_prompt(tmp_path, 
     [agent] = runner.agents
     assert agent.instructions == "Only the listed handlers."
     [prompt] = prompts_for(runner, ENDPOINT_RISK_AGENT)
-    assert "http_handlers: create" in prompt
+    assert "http_handlers" not in prompt
+    assert "export function create(req, res)" in prompt
     assert read_json(output_path(run_dir, "claude-haiku-4-5", "demo", 1, "unauthenticated_endpoints", "strict"))
     [run] = read_jsonl(run_dir / "runs.jsonl")
     [call] = read_jsonl(run_dir / "calls.jsonl")
@@ -305,7 +306,7 @@ def test_prompt_matrix_reports_one_series_per_model_and_prompt(tmp_path, case, p
         ("claude-haiku-4-5 · baseline", "sensitive_env_vars"),
     }
     prompts = results["metadata"]["agents"]["unauthenticated_endpoints"]["prompts"]
-    assert prompts["strict"]["input"] == "handler-names"
+    assert prompts["strict"]["input"] == "source-only"
     assert "+Only the listed handlers." in prompts["strict"]["diff"]
     assert "model · prompt" in (run_dir / "summary.md").read_text()
 

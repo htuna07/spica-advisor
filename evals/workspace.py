@@ -8,10 +8,10 @@ import yaml
 
 from evals.cases import EXPECTED_ROOT, LABEL_FILES, RESOURCES_ROOT
 from evals.harness import MATRIX_PATH
-from evals.inputs import public_handler_names
 from evals.prompts import PROMPTS_ROOT, all_variants
 from evals.tasks import TASKS
 from evals.validation import IGNORED_DIRS, SCANNED_SUFFIXES
+from spica_advisor.investigations.unauthenticated_endpoints.handlers import public_handler_names
 from spica_advisor.model_profiles import MODEL_PROFILES
 from spica_advisor.resources import load_buckets, load_env_vars, load_functions, load_policies
 

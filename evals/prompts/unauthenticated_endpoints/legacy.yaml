@@ -1,4 +1,5 @@
-description: Judges a thin wrapper by the function it forwards to, so wrappers around authenticated handlers are not reported.
+description: The endpoint prompt before handler names, delegation and public-by-design rules (until 2af7405).
+input: source-only
 instructions: |
   Analyze javascript/typescript functions to find unauthenticated public endpoints
   and evaluate their risk, return report in desired format.
@@ -7,10 +8,6 @@ instructions: |
   2- Check whether their implementation starts with any authentication or
      authorization checks. Don't dive into auth implementations, just determine
      any sign of auth checks.
-     When a function mostly forwards the request to another function in the same
-     source, for example `return getConversation(req, res)` or building a new
-     request and calling another handler with it, judge the function it forwards
-     to instead. A wrapper around a function that checks auth is protected.
   3- Report ONLY the functions that do NOT start with an auth check from step 2.
      Leave out every function that has one.
   4- Evaluate their risk by the following criteria:

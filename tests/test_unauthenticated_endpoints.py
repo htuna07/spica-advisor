@@ -1,7 +1,10 @@
+import pytest
+
 from spica_advisor import resources
 from spica_advisor.investigations import unauthenticated_endpoints
 from spica_advisor.investigations.unauthenticated_endpoints import prompts
 from spica_advisor.investigations.unauthenticated_endpoints.agents import ENDPOINT_RISK_AGENT
+from spica_advisor.investigations.unauthenticated_endpoints.handlers import exported_names
 from spica_advisor.investigations.unauthenticated_endpoints.models import (
     FunctionRisk,
     FunctionRiskResponse,
@@ -85,11 +88,11 @@ def test_load_functions_includes_id_schema_and_content(tmp_path):
 
 
 def test_sends_only_public_functions_without_schema_to_agent(tmp_path):
-    write_function(tmp_path, "demo", "public", PUBLIC_HTTP, "// public source")
-    write_function(tmp_path, "demo", "no-authorize", PUBLIC_HTTP_WITHOUT_AUTHORIZE, "// no authorize source")
-    write_function(tmp_path, "demo", "authorized", AUTHORIZED_HTTP, "// authorized source")
-    write_function(tmp_path, "demo", "inactive", INACTIVE_HTTP, "// inactive source")
-    write_function(tmp_path, "demo", "scheduled", SCHEDULE, "// scheduled source")
+    write_function(tmp_path, "demo", "public", PUBLIC_HTTP, "export function handler(req, res) {} // public source")
+    write_function(tmp_path, "demo", "no-authorize", PUBLIC_HTTP_WITHOUT_AUTHORIZE, "export function handler(req, res) {} // no authorize source")
+    write_function(tmp_path, "demo", "authorized", AUTHORIZED_HTTP, "export function handler(req, res) {} // authorized source")
+    write_function(tmp_path, "demo", "inactive", INACTIVE_HTTP, "export function handler(req, res) {} // inactive source")
+    write_function(tmp_path, "demo", "scheduled", SCHEDULE, "export function handler(req, res) {} // scheduled source")
     runner = FakeRunner(FunctionRiskResponse(functions=[]))
 
     unauthenticated_endpoints.build().run(tmp_path / "demo", runner)
@@ -104,7 +107,7 @@ def test_sends_only_public_functions_without_schema_to_agent(tmp_path):
     assert "/public" not in prompt
 
 
-def test_reports_method_risks_grouped_by_analyzed_function(tmp_path):
+def test_reports_risks_of_served_handlers_grouped_by_function(tmp_path):
     write_function(tmp_path, "demo", "fn-1", PUBLIC_HTTP, "export function handler(req, res) {}")
     write_function(tmp_path, "demo", "fn-2", PUBLIC_HTTP, "export function handler(req, res) {}")
     runner = FakeRunner(FunctionRiskResponse(functions=[
@@ -127,14 +130,13 @@ def test_reports_method_risks_grouped_by_analyzed_function(tmp_path):
             "path": "function/fn-1",
             "methods": [
                 {"name": "handler", "risk_level": "high", "reason": "writes bucket"},
-                {"name": "health", "risk_level": "low", "reason": "returns OK"},
             ],
         },
     ]
 
 
 def test_skips_agent_when_no_public_functions(tmp_path):
-    write_function(tmp_path, "demo", "authorized", AUTHORIZED_HTTP, "// authorized source")
+    write_function(tmp_path, "demo", "authorized", AUTHORIZED_HTTP, "export function handler(req, res) {} // authorized source")
     runner = FakeRunner(response=None)
 
     assert unauthenticated_endpoints.build().run(tmp_path / "demo", runner) == []
@@ -158,9 +160,9 @@ def risk(function_id):
 
 
 def test_splits_large_inputs_into_batches_and_merges_their_risks(tmp_path, monkeypatch):
-    monkeypatch.setattr(prompts, "MAX_BATCH_CHARS", 300)
+    monkeypatch.setattr(prompts, "MAX_BATCH_CHARS", 400)
     for function_id in ("fn-1", "fn-2", "fn-3"):
-        write_function(tmp_path, "demo", function_id, PUBLIC_HTTP, f"// {function_id} " + "x" * 100)
+        write_function(tmp_path, "demo", function_id, PUBLIC_HTTP, f"export function handler(req, res) {{}} // {function_id} " + "x" * 100)
     runner = SequenceRunner([
         FunctionRiskResponse(functions=[risk("fn-1"), risk("fn-2")]),
         FunctionRiskResponse(functions=[risk("fn-3")]),
@@ -174,7 +176,50 @@ def test_splits_large_inputs_into_batches_and_merges_their_risks(tmp_path, monke
 
 def test_oversized_function_gets_its_own_batch(monkeypatch):
     monkeypatch.setattr(prompts, "MAX_BATCH_CHARS", 100)
-    small = {"_id": "small", "content": "x"}
-    large = {"_id": "large", "content": "x" * 500}
+    small = {"_id": "small", "content": "x", "handlers": ["handler"]}
+    large = {"_id": "large", "content": "x" * 500, "handlers": ["handler"]}
 
     assert prompts.batch_by_size([small, large, small]) == [[small], [large], [small]]
+
+
+def test_prompt_lists_each_function_s_served_handlers(tmp_path):
+    triggers = PUBLIC_HTTP + PUBLIC_HTTP.replace("handler", "default").replace("/public", "/") + PUBLIC_HTTP.replace("handler", "missing")
+    write_function(tmp_path, "demo", "fn-1", triggers, "export default () => {}\nexport function handler(req, res) {}")
+    runner = FakeRunner(FunctionRiskResponse(functions=[]))
+
+    unauthenticated_endpoints.build().run(tmp_path / "demo", runner)
+
+    [prompt] = runner.prompts
+    assert "function_id: fn-1\nhttp_handlers: default (the default export), handler\n" in prompt
+
+
+def test_skips_functions_whose_public_triggers_have_no_exported_handler(tmp_path):
+    write_function(tmp_path, "demo", "fn-library", PUBLIC_HTTP.replace("handler", "default"), "export const KEY = 1;")
+    write_function(tmp_path, "demo", "fn-api", PUBLIC_HTTP, "export function handler(req, res) {}")
+    runner = FakeRunner(FunctionRiskResponse(functions=[]))
+
+    unauthenticated_endpoints.build().run(tmp_path / "demo", runner)
+
+    [prompt] = runner.prompts
+    assert "fn-library" not in prompt
+    assert "function_id: fn-api" in prompt
+
+
+def test_skips_agent_when_no_public_trigger_has_a_handler(tmp_path):
+    write_function(tmp_path, "demo", "fn-library", PUBLIC_HTTP.replace("handler", "default"), "export const KEY = 1;")
+    runner = FakeRunner(response=None)
+
+    assert unauthenticated_endpoints.build().run(tmp_path / "demo", runner) == []
+    assert runner.prompts == []
+
+
+@pytest.mark.parametrize(("source", "names"), [
+    ("export async function create(req, res) {}", {"create"}),
+    ("export function* stream() {}\nexport const list = async (req, res) => {}", {"stream", "list"}),
+    ("function a() {}\nfunction b() {}\nexport { a, b as renamed }", {"a", "renamed"}),
+    ("export default async function (req, res) {}", {"default"}),
+    ("const handler = () => {};\nexport { handler as default };", {"default"}),
+    ("function create(req, res) {}", set()),
+])
+def test_exported_names_cover_the_esm_export_forms(source, names):
+    assert exported_names(source) == names

@@ -1,20 +1,9 @@
 from spica_advisor.investigations.unauthenticated_endpoints.agents import ENDPOINT_RISK_AGENT
 from spica_advisor.investigations.unauthenticated_endpoints.context import UnauthenticatedEndpointsContext
+from spica_advisor.investigations.unauthenticated_endpoints.handlers import has_public_endpoint, served_handler_names
 from spica_advisor.investigations.unauthenticated_endpoints.prompts import endpoint_risk_inputs
 from spica_advisor.log import LOGGER
 from spica_advisor.resources import load_functions, resource_locations
-
-
-def is_public_endpoint(trigger):
-    return (
-        trigger.get("type") == "http"
-        and trigger.get("active") is True
-        and not (trigger.get("options") or {}).get("authorize")
-    )
-
-
-def has_public_endpoint(schema):
-    return any(is_public_endpoint(trigger) for trigger in (schema.get("triggers") or {}).values())
 
 
 def read_functions(context: UnauthenticatedEndpointsContext):
@@ -31,10 +20,14 @@ def find_public_functions(context: UnauthenticatedEndpointsContext):
 
 
 def prepare_for_analysis(context: UnauthenticatedEndpointsContext):
-    context.analysis_inputs = [
-        {"_id": function["_id"], "content": function["content"]}
-        for function in context.public_functions
-    ]
+    context.analysis_inputs = []
+    for function in context.public_functions:
+        handlers = served_handler_names(function)
+        if handlers:
+            context.analysis_inputs.append({"_id": function["_id"], "content": function["content"], "handlers": handlers})
+    skipped = len(context.public_functions) - len(context.analysis_inputs)
+    if skipped:
+        LOGGER.info("Skipped %d functions whose public triggers have no exported handler", skipped)
 
 
 def endpoint_risk_prompts(context: UnauthenticatedEndpointsContext):
@@ -50,22 +43,23 @@ def analyze_endpoints(context: UnauthenticatedEndpointsContext, build_prompts=en
         context.function_risks.extend(response.functions)
 
 
-def function_report(function_risk, location):
+def function_report(function_risk, location, handlers):
     return {
         "function_id": function_risk.function_id,
         "function_name": location.get("name"),
         "path": location.get("path"),
-        "methods": [method.model_dump() for method in function_risk.methods],
+        "methods": [method.model_dump() for method in function_risk.methods if method.name in handlers],
     }
 
 
 def report_unauthenticated_endpoints(context: UnauthenticatedEndpointsContext):
-    analyzed_ids = {function["_id"] for function in context.analysis_inputs}
+    handlers = {function["_id"]: set(function["handlers"]) for function in context.analysis_inputs}
     locations = resource_locations(context.project_dir, "function")
-    context.report = [
-        function_report(function_risk, locations.get(function_risk.function_id, {}))
+    reports = [
+        function_report(function_risk, locations.get(function_risk.function_id, {}), handlers[function_risk.function_id])
         for function_risk in context.function_risks
-        if function_risk.function_id in analyzed_ids and function_risk.methods
+        if function_risk.function_id in handlers
     ]
+    context.report = [report for report in reports if report["methods"]]
     method_count = sum(len(function_risk["methods"]) for function_risk in context.report)
     LOGGER.info("Found %d unauthenticated endpoints in %d functions", method_count, len(context.report))

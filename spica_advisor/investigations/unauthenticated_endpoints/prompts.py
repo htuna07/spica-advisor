@@ -1,24 +1,46 @@
+from spica_advisor.investigations.unauthenticated_endpoints.handlers import DEFAULT_EXPORT
+
+
 # About 75k tokens, so a single request stays well under provider per-minute token limits.
 MAX_BATCH_CHARS = 300_000
 
 ENDPOINT_RISK_INSTRUCTIONS = """
-Analyze javascript/typescript functions to find unauthenticated public endpoints
-and evaluate their risk, return report in desired format.
+Analyze javascript/typescript Spica functions to find public HTTP handlers
+that run without an authentication check, and evaluate their risk.
 
-1- Check ONLY exported functions, which receive request and response objects.
-2- Check whether their implementation starts with any authentication or
-   authorization checks. Don't dive into auth implementations, just determine
-   any sign of auth checks.
-3- Report ONLY the functions that do NOT start with an auth check from step 2.
-   Leave out every function that has one.
-4- Evaluate their risk by the following criteria:
+Each function lists its http_handlers: the exported functions Spica serves
+over HTTP. Other exports are internal helpers or other kinds of triggers.
+
+1- Check ONLY the handlers listed in http_handlers. Ignore every other export,
+   even when it receives request and response objects.
+2- Check whether each listed handler's implementation starts with any
+   authentication or authorization check. Don't dive into auth
+   implementations, just determine any sign of auth checks.
+   When a handler mostly forwards the request to another function in the same
+   source, for example `return getConversation(req, res)` or building a new
+   request and calling another handler with it, judge the function it forwards
+   to instead. A wrapper around a function that checks auth is protected.
+3- Report a handler ONLY when it has no auth check. Leave out every handler
+   that has one, and return an empty methods list for a function whose
+   handlers all check auth.
+   A sign-in, registration or password reset handler is public by design
+   when anyone can call it and the only check is the user's own sign-in
+   details, such as an email and password or a provider token. Report it
+   and rate it low. If the caller must first present an API key, an
+   identity token or a signature, that is an auth check: leave the
+   handler out.
+4- Evaluate their risk by the following criteria, checking low first:
+   - low: The endpoint is public by design and protected in another way:
+     sign-in, registration, password reset and email verification flows, or
+     code that verifies something else before acting, such as a captcha or
+     Turnstile token, a one-time code or signed link, or a webhook signature.
+     Also code that just returns some dummy data like "OK", json array,
+     nothing that harms spica or other critical resources.
    - high: Code performs CRUD on any database, bucket, storage etc.
    - medium: Code performs some calculations, tries to validate some logic,
      spica behavior, or interacts with non-critical resources like sending an
      http request to another testing purpose spica, or google.com.
      Or code read somethings but never return them.
-   - low: Code just returns some dummy data like "OK", json array, nothing that
-     harms spica or other critical resources.
 5- Write a very short explanation of the risk evaluation to reason.
 
 Return one entry per function with it's id, methods object array including
@@ -26,8 +48,14 @@ method name, risk level, and reason.
 """
 
 
+def handler_label(name):
+    # Spica serves a function's default export under the trigger name "default".
+    return f"{name} (the default export)" if name == DEFAULT_EXPORT else name
+
+
 def format_function(function):
     return f"""function_id: {function["_id"]}
+http_handlers: {", ".join(handler_label(name) for name in function["handlers"])}
 ```
 {function["content"]}
 ```"""
@@ -38,11 +66,11 @@ def endpoint_risk_input(functions):
     return f"Functions:\n{sources}"
 
 
-def batch_by_size(functions):
+def batch_by_size(functions, format_one=format_function):
     batches = []
     batch_chars = 0
     for function in functions:
-        function_chars = len(format_function(function))
+        function_chars = len(format_one(function))
         if batches and batch_chars + function_chars <= MAX_BATCH_CHARS:
             batches[-1].append(function)
             batch_chars += function_chars

@@ -163,7 +163,7 @@ def test_cases_page_lists_prompt_variants_and_keeps_baseline_costs(tmp_path):
     matrix.write_text("models: [gpt-6-luna]\ncases: all\nrepeats: 1\ntasks: all\n")
     prompts = tmp_path / "prompts" / "unauthenticated_endpoints"
     prompts.mkdir(parents=True)
-    (prompts / "strict.yaml").write_text("description: Stricter.\ninput: handler-names\ninstructions: x\n")
+    (prompts / "strict.yaml").write_text("description: Stricter.\ninput: source-only\ninstructions: x\n")
     results = {"run": "r1", "rows": [
         {"model": "gpt-6-luna", "prompt": "baseline", "task": "unauthenticated_endpoints", "case": "c1", "cost_per_run": 0.5},
         {"model": "gpt-6-luna", "prompt": "strict", "task": "unauthenticated_endpoints", "case": "c1", "cost_per_run": 0.9},
@@ -173,7 +173,7 @@ def test_cases_page_lists_prompt_variants_and_keeps_baseline_costs(tmp_path):
 
     assert data["prompts"]["unauthenticated_endpoints"] == [
         {"name": "baseline", "description": "The prompt the advisor ships with.", "input": "default"},
-        {"name": "strict", "description": "Stricter.", "input": "handler-names"},
+        {"name": "strict", "description": "Stricter.", "input": "source-only"},
     ]
     assert data["prompts"]["bucket_acl"] == [
         {"name": "baseline", "description": "The prompt the advisor ships with.", "input": "default"},

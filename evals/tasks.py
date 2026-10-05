@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 
 from agents import Agent
 
-from evals.inputs import endpoint_prompts_with_handler_names
+from evals.inputs import endpoint_prompts_without_handler_names
 from spica_advisor.investigations.broken_access_control.agents import BUCKET_ACL_AGENT, POLICY_ATTACHMENT_AGENT
 from spica_advisor.investigations.broken_access_control.context import BrokenAccessControlContext
 from spica_advisor.investigations.broken_access_control.prompts import bucket_acl_input
@@ -14,11 +14,11 @@ from spica_advisor.investigations.sensitive_env_vars.context import SensitiveEnv
 from spica_advisor.investigations.sensitive_env_vars.steps import assess_sensitiveness, read_env_vars
 from spica_advisor.investigations.unauthenticated_endpoints.agents import ENDPOINT_RISK_AGENT
 from spica_advisor.investigations.unauthenticated_endpoints.context import UnauthenticatedEndpointsContext
+from spica_advisor.investigations.unauthenticated_endpoints.handlers import has_public_endpoint
 from spica_advisor.investigations.unauthenticated_endpoints.steps import (
     analyze_endpoints,
     endpoint_risk_prompts,
     find_public_functions,
-    has_public_endpoint,
     prepare_for_analysis,
 )
 from spica_advisor.investigations.unauthenticated_endpoints.steps import read_functions as read_endpoint_functions
@@ -91,7 +91,7 @@ TASKS = {
                 has_public_endpoint(function["schema"]) for function in load_functions(case.project_dir)
             ),
             predict=predict_unauthenticated_endpoints,
-            inputs={"handler-names": endpoint_prompts_with_handler_names},
+            inputs={"source-only": endpoint_prompts_without_handler_names},
         ),
         AgentTask(
             name="policy_attachments",
