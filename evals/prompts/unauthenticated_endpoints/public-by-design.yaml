@@ -9,6 +9,9 @@ instructions: |
      any sign of auth checks.
   3- Report ONLY the functions that do NOT start with an auth check from step 2.
      Leave out every function that has one.
+     A sign-in, registration or password reset handler that checks the
+     caller's credentials itself is not protected by an auth check: it is
+     public by design, so report it and rate it low.
   4- Evaluate their risk by the following criteria, checking low first:
      - low: The endpoint is public by design and protected in another way:
        sign-in, registration, password reset and email verification flows, or
