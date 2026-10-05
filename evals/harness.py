@@ -1,25 +1,36 @@
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from itertools import count
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import yaml
 
-from evals.cases import EXPECTED_ROOT, RESOURCES_ROOT, find_cases
-from evals.prompts import BASELINE, BASELINE_VARIANT, PROMPTS_ROOT, describe_variant, fingerprint, load_variants
+from evals.cases import EXPECTED_ROOT, RESOURCES_ROOT, EvalCase, find_cases
+from evals.prompts import (
+    BASELINE,
+    BASELINE_VARIANT,
+    PROMPTS_ROOT,
+    PromptVariant,
+    describe_variant,
+    fingerprint,
+    load_variants,
+)
 from evals.storage import append_jsonl, write_json
 from evals.tasks import TASKS
 from evals.validation import check_case
-from spica_advisor.log import LOGGER
-from spica_advisor.metrics import OK_STATUS
+from spica_advisor.log import LOGGER, configure_logging
+from spica_advisor.metrics import OK_STATUS, CallRecord
 from spica_advisor.model_profiles import MODEL_PROFILES
-from spica_advisor.runner import AgentRunner
+from spica_advisor.runners import create_runner
 
 
 MATRIX_PATH = Path("evals/matrix.yaml")
 RUNS_ROOT = Path("evals/runs")
 ALL = "all"
+DEFAULT_WORKERS = 4
 
 
 @dataclass(frozen=True)
@@ -90,6 +101,28 @@ def output_path(run_dir, model, case, repeat, task, prompt=BASELINE):
     return run_dir / "outputs" / model / case / f"r{repeat}" / file_name
 
 
+@dataclass(frozen=True)
+class TaskJob:
+    model: str
+    case: EvalCase
+    repeat: int
+    task: str
+    variant: PromptVariant
+
+
+@dataclass(frozen=True)
+class TaskResult:
+    tags: dict
+    status: str
+    prediction: Any
+    wall_seconds: float
+    calls: list[CallRecord]
+
+
+def configure_eval_logging():
+    configure_logging(debug=False, log_file=None, log_format="text")
+
+
 class VariantRunner:
     def __init__(self, runner, agent, replacement):
         self.runner = runner
@@ -109,9 +142,9 @@ def validated_cases(names, expected_root=EXPECTED_ROOT, resources_root=RESOURCES
     return cases
 
 
-def run_task(run_dir, runner, case, labels, repeat, task, variant=BASELINE_VARIANT):
+def execute_task(runner, case, labels, repeat, task, variant=BASELINE_VARIANT):
     if not task.has_input(case, labels):
-        return
+        return None
     tags = {"model": runner.profile.name, "case": case.name, "repeat": repeat, "task": task.name,
             "prompt": variant.name}
     first_call = len(runner.calls)
@@ -124,14 +157,41 @@ def run_task(run_dir, runner, case, labels, repeat, task, variant=BASELINE_VARIA
         LOGGER.exception("Task %s failed for %s", task.name, case.name)
         prediction, status = None, type(error).__name__
     wall_seconds = round(time.perf_counter() - started, 3)
-    calls = runner.calls[first_call:]
+    return TaskResult(tags, status, prediction, wall_seconds, runner.calls[first_call:])
 
-    write_json(output_path(run_dir, **tags), {"status": status, "prediction": prediction})
-    append_jsonl(run_dir / "runs.jsonl", {**tags, "status": status, "wall_seconds": wall_seconds, "calls": len(calls)})
-    for call in calls:
+
+def record_task(run_dir, result):
+    tags = result.tags
+    write_json(output_path(run_dir, **tags), {"status": result.status, "prediction": result.prediction})
+    append_jsonl(run_dir / "runs.jsonl",
+                 {**tags, "status": result.status, "wall_seconds": result.wall_seconds, "calls": len(result.calls)})
+    for call in result.calls:
         append_jsonl(run_dir / "calls.jsonl", {**tags, **asdict(call)})
-    LOGGER.info("[%s] %s r%d %s (%s): %s, %d calls, %.1fs",
-                tags["model"], case.name, repeat, task.name, variant.name, status, len(calls), wall_seconds)
+    LOGGER.info("[%s] %s r%d %s (%s): %s, %d calls, %.1fs", tags["model"], tags["case"], tags["repeat"],
+                tags["task"], tags["prompt"], result.status, len(result.calls), result.wall_seconds)
+
+
+def run_task(run_dir, runner, case, labels, repeat, task, variant=BASELINE_VARIANT):
+    result = execute_task(runner, case, labels, repeat, task, variant)
+    if result:
+        record_task(run_dir, result)
+
+
+def run_job(job, create_runner):
+    runner = create_runner(MODEL_PROFILES[job.model])
+    return execute_task(runner, job.case, job.case.load_labels(), job.repeat, TASKS[job.task], job.variant)
+
+
+def matrix_jobs(matrix, cases, variants):
+    # Models vary fastest so concurrent jobs spread across the providers' rate limits.
+    return [
+        TaskJob(model, case, repeat, task, variants[task][prompt])
+        for case in cases
+        for repeat in range(1, matrix.repeats + 1)
+        for task in matrix.tasks
+        for prompt in matrix.prompts_for(task)
+        for model in matrix.models
+    ]
 
 
 def agent_metadata(matrix, task, variants):
@@ -155,14 +215,16 @@ def run_metadata(matrix, variants):
     }
 
 
-def run_matrix(matrix, run_dir, cases, create_runner=AgentRunner.from_env, prompts_root=PROMPTS_ROOT):
+def run_matrix(matrix, run_dir, cases, create_runner=create_runner, prompts_root=PROMPTS_ROOT,
+               workers=DEFAULT_WORKERS, executor_class=ProcessPoolExecutor):
     variants = {task: load_variants(task, prompts_root) for task in matrix.tasks}
     write_json(run_dir / "matrix.json", {**asdict(matrix), "metadata": run_metadata(matrix, variants)})
+    # Fails on a missing API key or CLI before any job starts.
     for model in matrix.models:
-        runner = create_runner(MODEL_PROFILES[model])
-        for case in cases:
-            labels = case.load_labels()
-            for repeat in range(1, matrix.repeats + 1):
-                for task_name in matrix.tasks:
-                    for prompt in matrix.prompts_for(task_name):
-                        run_task(run_dir, runner, case, labels, repeat, TASKS[task_name], variants[task_name][prompt])
+        create_runner(MODEL_PROFILES[model])
+    # Each job builds its own runner in a worker process; the SDK's clients are bound to one event loop.
+    with executor_class(max_workers=workers, initializer=configure_eval_logging) as executor:
+        futures = [executor.submit(run_job, job, create_runner) for job in matrix_jobs(matrix, cases, variants)]
+        for future in as_completed(futures):
+            if result := future.result():
+                record_task(run_dir, result)

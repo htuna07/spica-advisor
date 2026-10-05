@@ -2,13 +2,26 @@ import argparse
 from pathlib import Path
 
 from evals.cases import EXPECTED_ROOT, RESOURCES_ROOT, find_cases
-from evals.harness import new_run_dir, resolve_matrix, run_matrix, validated_cases
+from evals.harness import (
+    DEFAULT_WORKERS,
+    configure_eval_logging,
+    new_run_dir,
+    resolve_matrix,
+    run_matrix,
+    validated_cases,
+)
 from evals.prompts import all_variants, describe_variant
 from evals.storage import read_json, write_json
 from evals.summary import write_summary
 from evals.validation import check_case
 from evals.workspace import export_cases, import_cases
-from spica_advisor.log import configure_logging
+
+
+def positive_int(value):
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError(f"must be at least 1: {value}")
+    return number
 
 
 def prompt_selection(value):
@@ -30,6 +43,8 @@ def parse_args():
     run.add_argument("--cases", nargs="+", metavar="CASE", help="overrides evals/matrix.yaml")
     run.add_argument("--tasks", nargs="+", metavar="TASK", help="overrides evals/matrix.yaml")
     run.add_argument("--repeats", type=int, help="overrides evals/matrix.yaml")
+    run.add_argument("--workers", type=positive_int, default=DEFAULT_WORKERS,
+                     help=f"agent tasks run at once (default {DEFAULT_WORKERS})")
     run.add_argument("--prompts", nargs="+", type=prompt_selection, metavar="TASK=VARIANT,...",
                      help="prompt variants to compare per agent; agents left out use baseline")
 
@@ -66,14 +81,14 @@ def check(names):
 
 
 def run(args):
-    configure_logging(debug=False, log_file=None, log_format="text")
+    configure_eval_logging()
     prompts = dict(args.prompts) if args.prompts else None
     matrix = resolve_matrix(models=args.models, cases=args.cases, repeats=args.repeats, tasks=args.tasks,
                             prompts=prompts)
     cases = validated_cases(matrix.cases)
     run_dir = new_run_dir()
     print(f"Writing results to {run_dir}")
-    run_matrix(matrix, run_dir, cases)
+    run_matrix(matrix, run_dir, cases, workers=args.workers)
     print(f"Summary: {write_summary(run_dir)}")
 
 

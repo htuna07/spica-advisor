@@ -1,11 +1,21 @@
 import csv
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from types import SimpleNamespace
 
 import pytest
 
 from evals.cases import EvalCase
-from evals.harness import Matrix, VariantRunner, new_run_dir, output_path, resolve_matrix, run_matrix, run_task
-from evals.prompts import load_variants
+from evals.harness import (
+    Matrix,
+    VariantRunner,
+    matrix_jobs,
+    new_run_dir,
+    output_path,
+    resolve_matrix,
+    run_matrix,
+    run_task,
+)
+from evals.prompts import BASELINE_VARIANT, load_variants
 from evals.storage import read_json, read_jsonl
 from evals.summary import write_summary
 from evals.tasks import TASKS
@@ -209,7 +219,8 @@ def test_matrix_run_produces_scored_summary(tmp_path, case):
     )
     matrix = Matrix(models=["claude-haiku-4-5"], cases=["demo"], repeats=2, tasks=list(TASKS))
 
-    run_matrix(matrix, run_dir, [case], create_runner=lambda profile: FakeRunner(profile.name))
+    run_matrix(matrix, run_dir, [case], create_runner=lambda profile: FakeRunner(profile.name),
+               executor_class=ThreadPoolExecutor)
     summary_path = write_summary(
         run_dir, expected_root=tmp_path / "expected", resources_root=tmp_path / "resources", pricing_path=pricing,
     )
@@ -235,6 +246,36 @@ def test_matrix_run_produces_scored_summary(tmp_path, case):
     report = (run_dir / "report.html").read_text()
     assert "__BENCHMARK_DATA__" not in report
     assert '"run": "run"' in report
+
+
+def fake_runner_for(profile):
+    return FakeRunner(profile.name)
+
+
+def test_matrix_runs_jobs_in_worker_processes(tmp_path, case):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    matrix = Matrix(models=["claude-haiku-4-5", "gpt-6-luna"], cases=["demo"], repeats=2, tasks=list(TASKS))
+
+    run_matrix(matrix, run_dir, [case], create_runner=fake_runner_for, workers=2, executor_class=ProcessPoolExecutor)
+
+    runs = read_jsonl(run_dir / "runs.jsonl")
+    assert len(runs) == 2 * 2 * len(TASKS)
+    assert {run["status"] for run in runs} == {"ok"}
+    assert sum(run["calls"] for run in runs) == len(read_jsonl(run_dir / "calls.jsonl"))
+    assert read_json(output_path(run_dir, "gpt-6-luna", "demo", 2, "bucket_acl"))["status"] == "ok"
+
+
+def test_matrix_jobs_alternate_models_first(case):
+    matrix = Matrix(models=["a", "b"], cases=["demo"], repeats=2, tasks=["sensitive_env_vars", "bucket_acl"])
+    variants = {task: {"baseline": BASELINE_VARIANT} for task in matrix.tasks}
+
+    jobs = matrix_jobs(matrix, [case], variants)
+
+    assert [(job.repeat, job.task, job.model) for job in jobs[:4]] == [
+        (1, "sensitive_env_vars", "a"), (1, "sensitive_env_vars", "b"), (1, "bucket_acl", "a"), (1, "bucket_acl", "b"),
+    ]
+    assert len(jobs) == 8
 
 
 def test_new_run_dirs_never_collide(tmp_path):
@@ -291,7 +332,8 @@ def test_prompt_matrix_reports_one_series_per_model_and_prompt(tmp_path, case, p
                     tasks=["unauthenticated_endpoints", "sensitive_env_vars"],
                     prompts={"unauthenticated_endpoints": ["baseline", "strict"]})
 
-    run_matrix(matrix, run_dir, [case], create_runner=lambda profile: FakeRunner(profile.name), prompts_root=prompts_root)
+    run_matrix(matrix, run_dir, [case], create_runner=lambda profile: FakeRunner(profile.name),
+               executor_class=ThreadPoolExecutor, prompts_root=prompts_root)
     write_summary(run_dir, expected_root=tmp_path / "expected", resources_root=tmp_path / "resources",
                   pricing_path=pricing)
 
@@ -317,7 +359,8 @@ def test_model_matrix_keeps_model_names_as_series(tmp_path, case):
     pricing.write_text("usd_per_million_tokens: {}\n")
     matrix = Matrix(models=["claude-haiku-4-5"], cases=["demo"], repeats=1, tasks=["sensitive_env_vars"])
 
-    run_matrix(matrix, run_dir, [case], create_runner=lambda profile: FakeRunner(profile.name))
+    run_matrix(matrix, run_dir, [case], create_runner=lambda profile: FakeRunner(profile.name),
+               executor_class=ThreadPoolExecutor)
     write_summary(run_dir, expected_root=tmp_path / "expected", resources_root=tmp_path / "resources",
                   pricing_path=pricing)
 
