@@ -307,7 +307,7 @@ td .metric-help { font-size: 12.5px; color: var(--muted); margin-top: 2px; max-w
     return;
   }
 
-  const seriesList = data.matrix.series || data.matrix.series.map((name) => ({ name: model, model, prompt: "baseline" }));
+  const seriesList = data.matrix.series || data.matrix.models.map((model) => ({ name: model, model, prompt: "baseline" }));
   const series = seriesList.map((entry) => entry.name);
   const seriesModel = Object.fromEntries(seriesList.map((entry) => [entry.name, entry.model]));
   const byPrompt = Boolean(data.matrix.compares_prompts);
@@ -736,9 +736,9 @@ td .metric-help { font-size: 12.5px; color: var(--muted); margin-top: 2px; max-w
   function renderPricing() {
     const fields = [["input", "Input"], ["cached_input", "Cached input"], ["cache_write", "Cache write"], ["output", "Output"]];
     const header = el("tr", {}, [el("th", { text: "Model" }), ...fields.map(([, label]) => el("th", { class: "num", text: label }))]);
-    const body = data.matrix.series.map((name) => {
+    const body = data.matrix.models.map((model) => {
       const price = data.pricing.models[model];
-      const swatch = byPrompt ? null : el("span", { class: "swatch", style: `background:${seriesColor(name)}` });
+      const swatch = byPrompt ? null : el("span", { class: "swatch", style: `background:${seriesColor(model)}` });
       return el("tr", {}, [
         el("td", {}, [el("span", { class: "legend" }, [el("span", {}, [swatch, model])])]),
         ...fields.map(([field]) => el("td", { class: "num", text: price && typeof price[field] === "number" ? formatPrice(price[field]) : "n/a" })),
