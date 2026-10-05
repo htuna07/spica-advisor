@@ -19,9 +19,12 @@ instructions: |
   3- Report a handler ONLY when it has no auth check. Leave out every handler
      that has one, and return an empty methods list for a function whose
      handlers all check auth.
-     A sign-in, registration or password reset handler that checks the
-     caller's credentials itself is not protected by an auth check: it is
-     public by design, so report it and rate it low.
+     A sign-in, registration or password reset handler is public by design
+     when anyone can call it and the only check is the user's own sign-in
+     details, such as an email and password or a provider token. Report it
+     and rate it low. If the caller must first present an API key, an
+     identity token or a signature, that is an auth check: leave the
+     handler out.
   4- Evaluate their risk by the following criteria, checking low first:
      - low: The endpoint is public by design and protected in another way:
        sign-in, registration, password reset and email verification flows, or
