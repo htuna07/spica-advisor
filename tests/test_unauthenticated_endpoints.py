@@ -1,5 +1,6 @@
 from spica_advisor import resources
 from spica_advisor.investigations import unauthenticated_endpoints
+from spica_advisor.investigations.unauthenticated_endpoints import prompts
 from spica_advisor.investigations.unauthenticated_endpoints.agents import ENDPOINT_RISK_AGENT
 from spica_advisor.investigations.unauthenticated_endpoints.models import (
     FunctionRisk,
@@ -138,3 +139,42 @@ def test_skips_agent_when_no_public_functions(tmp_path):
 
     assert unauthenticated_endpoints.build().run(tmp_path / "demo", runner) == []
     assert runner.prompts == []
+
+
+class SequenceRunner:
+    def __init__(self, responses):
+        self.responses = iter(responses)
+        self.prompts = []
+
+    def run(self, agent, prompt):
+        self.prompts.append(prompt)
+        return next(self.responses)
+
+
+def risk(function_id):
+    return FunctionRisk(function_id=function_id, methods=[
+        MethodRisk(name="handler", risk_level="medium", reason="no auth"),
+    ])
+
+
+def test_splits_large_inputs_into_batches_and_merges_their_risks(tmp_path, monkeypatch):
+    monkeypatch.setattr(prompts, "MAX_BATCH_CHARS", 300)
+    for function_id in ("fn-1", "fn-2", "fn-3"):
+        write_function(tmp_path, "demo", function_id, PUBLIC_HTTP, f"// {function_id} " + "x" * 100)
+    runner = SequenceRunner([
+        FunctionRiskResponse(functions=[risk("fn-1"), risk("fn-2")]),
+        FunctionRiskResponse(functions=[risk("fn-3")]),
+    ])
+
+    report = unauthenticated_endpoints.build().run(tmp_path / "demo", runner)
+
+    assert [prompt.count("function_id:") for prompt in runner.prompts] == [2, 1]
+    assert sorted(entry["function_id"] for entry in report) == ["fn-1", "fn-2", "fn-3"]
+
+
+def test_oversized_function_gets_its_own_batch(monkeypatch):
+    monkeypatch.setattr(prompts, "MAX_BATCH_CHARS", 100)
+    small = {"_id": "small", "content": "x"}
+    large = {"_id": "large", "content": "x" * 500}
+
+    assert prompts.batch_by_size([small, large, small]) == [[small], [large], [small]]

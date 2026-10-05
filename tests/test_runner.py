@@ -7,7 +7,7 @@ from openai.types.responses.response_usage import InputTokensDetails, OutputToke
 from spica_advisor.anthropic_model import AnthropicModel
 from spica_advisor.metrics import CallRecord, totals
 from spica_advisor.model_profiles import MODEL_PROFILES, ModelProfile
-from spica_advisor.runner import AgentRunner
+from spica_advisor.runner import OPENAI_MAX_RETRIES, AgentRunner
 
 
 AGENT = Agent(name="Test agent")
@@ -180,3 +180,14 @@ def test_totals_sum_calls_and_count_failures():
         "output_tokens": 60,
         "reasoning_tokens": 10,
     }
+
+
+def test_openai_client_retries_rate_limits(monkeypatch, no_dotenv):
+    clients = []
+    monkeypatch.setattr("spica_advisor.runner.set_default_openai_client", clients.append)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+
+    AgentRunner.from_env(OPENAI_PROFILE)
+
+    [client] = clients
+    assert client.max_retries == OPENAI_MAX_RETRIES

@@ -11,6 +11,9 @@ from spica_advisor.model_profiles import ModelProfile
 
 
 MAX_TURNS = 10
+# Batched investigations can exceed the per-minute token limit; the client waits out
+# each 429 using the server's retry-after delay, so allow enough attempts to span a minute.
+OPENAI_MAX_RETRIES = 8
 TRACING_ENV_VAR = "SPICA_ADVISOR_TRACING"
 ENABLED_VALUES = {"1", "true", "yes"}
 
@@ -45,7 +48,7 @@ class AgentRunner:
         if tracing and not os.environ.get("OPENAI_API_KEY"):
             raise ValueError(f"{TRACING_ENV_VAR} requires OPENAI_API_KEY")
         if profile.is_openai:
-            set_default_openai_client(AsyncOpenAI())
+            set_default_openai_client(AsyncOpenAI(max_retries=OPENAI_MAX_RETRIES))
         return cls(profile, tracing)
 
     def run(self, agent: Agent, prompt, context=None):

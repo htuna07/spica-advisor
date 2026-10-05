@@ -1,3 +1,6 @@
+# About 75k tokens, so a single request stays well under provider per-minute token limits.
+MAX_BATCH_CHARS = 300_000
+
 ENDPOINT_RISK_INSTRUCTIONS = """
 Analyze javascript/typescript functions to find unauthenticated public endpoints
 and evaluate their risk, return report in desired format.
@@ -33,3 +36,21 @@ def format_function(function):
 def endpoint_risk_input(functions):
     sources = "\n\n".join(format_function(function) for function in functions)
     return f"Functions:\n{sources}"
+
+
+def batch_by_size(functions):
+    batches = []
+    batch_chars = 0
+    for function in functions:
+        function_chars = len(format_function(function))
+        if batches and batch_chars + function_chars <= MAX_BATCH_CHARS:
+            batches[-1].append(function)
+            batch_chars += function_chars
+        else:
+            batches.append([function])
+            batch_chars = function_chars
+    return batches
+
+
+def endpoint_risk_inputs(functions):
+    return [endpoint_risk_input(batch) for batch in batch_by_size(functions)]
