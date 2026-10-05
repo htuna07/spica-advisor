@@ -6,9 +6,17 @@ def public_handler_names(schema):
     return sorted(name for name, trigger in (schema.get("triggers") or {}).items() if is_public_endpoint(trigger))
 
 
+DEFAULT_EXPORT = "default"
+
+
+def handler_label(name):
+    # Spica serves a function's default export under the trigger name "default".
+    return f"{name} (the default export)" if name == DEFAULT_EXPORT else name
+
+
 def format_function_with_handlers(function):
     return f"""function_id: {function["_id"]}
-http_handlers: {", ".join(function["handlers"])}
+http_handlers: {", ".join(handler_label(name) for name in function["handlers"])}
 ```
 {function["content"]}
 ```"""

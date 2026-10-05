@@ -1,8 +1,10 @@
 import argparse
+from types import SimpleNamespace
 
 import pytest
 
 from evals.cli import prompt_selection
+from evals.inputs import endpoint_prompts_with_handler_names
 from evals.prompts import BASELINE, describe_variant, load_variants
 from spica_advisor.investigations.unauthenticated_endpoints.agents import ENDPOINT_RISK_AGENT
 
@@ -78,3 +80,16 @@ def test_prompt_selection_parses_task_and_variants():
     assert prompt_selection("unauthenticated_endpoints=baseline, combined") == (TASK, ["baseline", "combined"])
     with pytest.raises(argparse.ArgumentTypeError):
         prompt_selection("unauthenticated_endpoints")
+
+
+def test_handler_names_input_explains_the_default_export():
+    schema = {"triggers": {
+        "default": {"type": "http", "active": True, "options": {}},
+        "report": {"type": "http", "active": True, "options": {}},
+        "nightly": {"type": "schedule", "active": True},
+    }}
+    context = SimpleNamespace(public_functions=[{"_id": "fn-1", "schema": schema, "content": "export default () => {}"}])
+
+    [prompt] = endpoint_prompts_with_handler_names(context)
+
+    assert "http_handlers: default (the default export), report\n" in prompt
