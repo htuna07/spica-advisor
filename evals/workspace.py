@@ -8,9 +8,10 @@ import yaml
 
 from evals.cases import EXPECTED_ROOT, LABEL_FILES, RESOURCES_ROOT
 from evals.harness import MATRIX_PATH
+from evals.inputs import public_handler_names
+from evals.prompts import PROMPTS_ROOT, all_variants
 from evals.tasks import TASKS
 from evals.validation import IGNORED_DIRS, SCANNED_SUFFIXES
-from spica_advisor.investigations.unauthenticated_endpoints.steps import is_public_endpoint
 from spica_advisor.model_profiles import MODEL_PROFILES
 from spica_advisor.resources import load_buckets, load_env_vars, load_functions, load_policies
 
@@ -52,14 +53,10 @@ def resource_files(project_dir):
     ]
 
 
-def public_triggers(schema):
-    return sorted(name for name, trigger in (schema.get("triggers") or {}).items() if is_public_endpoint(trigger))
-
-
 def real_case_index(project_dir):
     return {
         "functions": [
-            {"_id": function["_id"], "name": function["name"], "public_triggers": public_triggers(function["schema"])}
+            {"_id": function["_id"], "name": function["name"], "public_triggers": public_handler_names(function["schema"])}
             for function in load_functions(project_dir)
         ],
         "buckets": [{"_id": bucket_id, "title": bucket.get("title")} for bucket_id, bucket in load_buckets(project_dir).items()],
@@ -166,10 +163,19 @@ def import_cases(payload, expected_root=EXPECTED_ROOT, resources_root=RESOURCES_
     return {"added": sorted(set(names) - existing), "updated": sorted(set(names) & existing), "removed": removed}
 
 
-def cases_page_data(results, matrix_path=MATRIX_PATH):
+def page_prompts(prompts_root):
+    return {
+        task: [{"name": variant.name, "description": variant.description, "input": variant.input}
+               for variant in variants.values()]
+        for task, variants in all_variants(prompts_root).items()
+    }
+
+
+def cases_page_data(results, matrix_path=MATRIX_PATH, prompts_root=PROMPTS_ROOT):
     defaults = yaml.safe_load(matrix_path.read_text(encoding="utf-8"))
     return {
         "models": list(MODEL_PROFILES),
+        "prompts": page_prompts(prompts_root),
         "default_models": defaults["models"],
         "default_repeats": defaults["repeats"],
         "tasks": list(TASKS),
@@ -179,7 +185,7 @@ def cases_page_data(results, matrix_path=MATRIX_PATH):
         "costs": {
             f"{row['model']}|{row['task']}|{row['case']}": row["cost_per_run"]
             for row in results["rows"]
-            if row["case"] != "all"
+            if row["case"] != "all" and row.get("prompt", "baseline") == "baseline"
         },
     }
 

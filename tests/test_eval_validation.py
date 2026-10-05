@@ -170,13 +170,19 @@ def test_every_public_function_needs_a_label_and_only_public_ones(case):
     ]
 
 
-def test_labeled_methods_must_exist_in_function_source(case):
-    write_label(case, "unauthenticated-endpoints.yaml", "fn-signup:\n  register: high\n  helper: low\n  regist: low\n")
+def test_labeled_methods_must_be_public_http_triggers(case):
+    write_label(case, "unauthenticated-endpoints.yaml", "fn-signup:\n  register: high\n  helper: low\n  admin: low\n")
 
     assert check_case(case) == [
-        "unauthenticated-endpoints.yaml: fn-signup.helper not found in function source",
-        "unauthenticated-endpoints.yaml: fn-signup.regist not found in function source",
+        "unauthenticated-endpoints.yaml: fn-signup.admin is not a public http trigger (public triggers: register)",
+        "unauthenticated-endpoints.yaml: fn-signup.helper is not a public http trigger (public triggers: register)",
     ]
+
+
+def test_labeled_triggers_must_exist_in_function_source(case):
+    write(case, "function/Signup/index.mjs", "export function signup(req, res) {}\n")
+
+    assert check_case(case) == ["unauthenticated-endpoints.yaml: fn-signup.register not found in function source"]
 
 
 def test_policy_attachments_must_reference_existing_function(case):

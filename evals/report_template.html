@@ -152,6 +152,10 @@ details.instructions pre {
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin: 8px 0 0;
   max-height: 360px; overflow: auto;
 }
+.prompts { display: grid; gap: 8px; }
+.diff .added { color: var(--good-text); }
+.diff .removed { color: var(--critical); }
+.diff .hunk { color: var(--muted); }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--ink-2); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 
@@ -303,25 +307,29 @@ td .metric-help { font-size: 12.5px; color: var(--muted); margin-top: 2px; max-w
     return;
   }
 
-  const models = data.matrix.models;
+  const seriesList = data.matrix.series || data.matrix.series.map((name) => ({ name: model, model, prompt: "baseline" }));
+  const series = seriesList.map((entry) => entry.name);
+  const seriesModel = Object.fromEntries(seriesList.map((entry) => [entry.name, entry.model]));
+  const byPrompt = Boolean(data.matrix.compares_prompts);
+  const seriesNoun = byPrompt ? "model and prompt" : "model";
   const tasks = data.matrix.tasks.filter((task) => data.tasks[task]);
   const agents = (data.metadata && data.metadata.agents) || {};
   const profiles = (data.metadata && data.metadata.model_profiles) || {};
   const rows = {};
-  data.rows.forEach((row) => { rows[`${row.model}|${row.task}|${row.case}`] = row; });
-  const row = (model, task, caseName) => rows[`${model}|${task}|${caseName || "all"}`];
+  data.rows.forEach((row) => { rows[`${row.series || row.model}|${row.task}|${row.case}`] = row; });
+  const row = (name, task, caseName) => rows[`${name}|${task}|${caseName || "all"}`];
   const totals = {};
-  data.totals.forEach((total) => { totals[total.model] = total; });
+  data.totals.forEach((total) => { totals[total.series || total.model] = total; });
 
-  function seriesColor(model) {
-    const index = models.indexOf(model);
+  function seriesColor(name) {
+    const index = series.indexOf(name);
     return index >= 0 && index < SERIES_SLOTS ? `var(--series-${index + 1})` : "var(--series-other)";
   }
 
   function agentName(task) { return (agents[task] && agents[task].name) || humanize(task); }
 
   function casesRun(task) {
-    return data.matrix.cases.filter((caseName) => models.some((model) => row(model, task, caseName)));
+    return data.matrix.cases.filter((caseName) => series.some((name) => row(name, task, caseName)));
   }
 
   function coverageText(task) {
@@ -362,7 +370,7 @@ td .metric-help { font-size: 12.5px; color: var(--muted); margin-top: 2px; max-w
     [
       el("span", {}, ["Run ", el("span", { class: "mono", text: data.run })]),
       started ? el("span", { text: "Started " + started.replace("T", " ").replace("+00:00", " UTC") }) : null,
-      el("span", { text: `${models.length} models` }),
+      el("span", { text: byPrompt ? `${series.length} model and prompt pairs` : `${series.length} models` }),
       el("span", { text: `${data.matrix.cases.length} cases` }),
       el("span", { text: `${data.matrix.repeats} repeat${data.matrix.repeats === 1 ? "" : "s"}` }),
       el("span", { text: `${tasks.length} agents` }),
@@ -374,14 +382,14 @@ td .metric-help { font-size: 12.5px; color: var(--muted); margin-top: 2px; max-w
   }
 
   function renderModels() {
-    const cards = models.map((model) => {
-      const total = totals[model] || {};
-      const profile = profiles[model];
+    const cards = series.map((name) => {
+      const total = totals[name] || {};
+      const profile = profiles[seriesModel[name]];
       const failed = total.failed_calls || 0;
       const perPass = total.total_cost === null || total.total_cost === undefined ? null : total.total_cost / data.matrix.repeats;
       return el("article", { class: "model-card" }, [
         el("div", {}, [
-          el("div", { class: "model-name" }, [el("span", { class: "swatch", style: `background:${seriesColor(model)}` }), model]),
+          el("div", { class: "model-name" }, [el("span", { class: "swatch", style: `background:${seriesColor(name)}` }), name]),
           profile ? el("div", { class: "model-id mono", text: `${profile.provider} · ${profile.model_id}` }) : null,
         ]),
         el("dl", { class: "model-stats" }, [
@@ -396,7 +404,7 @@ td .metric-help { font-size: 12.5px; color: var(--muted); margin-top: 2px; max-w
       ]);
     });
     return el("section", { class: "section" }, [
-      sectionHead("Models", "A full pass is every agent over every case once. Costs use the prices listed at the bottom."),
+      sectionHead(byPrompt ? "Model and prompt pairs" : "Models", "A full pass is every agent over every case once. Costs use the prices listed at the bottom."),
       el("div", { class: "models" }, cards),
     ]);
   }
@@ -426,26 +434,26 @@ td .metric-help { font-size: 12.5px; color: var(--muted); margin-top: 2px; max-w
   }
 
   function renderLeaderboard() {
-    const header = el("tr", {}, [el("th", { text: "Agent" }), ...models.map((model) => el("th", {}, [
-      el("span", { class: "legend" }, [el("span", {}, [el("span", { class: "swatch", style: `background:${seriesColor(model)}` }), model])]),
+    const header = el("tr", {}, [el("th", { text: "Agent" }), ...series.map((name) => el("th", {}, [
+      el("span", { class: "legend" }, [el("span", {}, [el("span", { class: "swatch", style: `background:${seriesColor(name)}` }), name])]),
     ]))]);
     const body = tasks.map((task) => {
       const info = data.tasks[task];
-      const values = models.map((model) => (row(model, task) || {})[info.primary_metric]);
+      const values = series.map((name) => (row(name, task) || {})[info.primary_metric]);
       const best = Math.max(...values.filter((value) => typeof value === "number"));
       return el("tr", {}, [
         el("td", { class: "agent-cell" }, [
           el("div", { text: agentName(task) }),
           el("div", { class: "desc", text: `${humanize(info.primary_metric)} · ${coverageText(task).toLowerCase()} · ${info.description}` }),
         ]),
-        ...models.map((model, index) => {
-          const summary = row(model, task);
+        ...series.map((name, index) => {
+          const summary = row(name, task);
           const value = values[index];
           if (!summary) return el("td", {}, [el("div", { class: "heat" }, [el("span", { class: "value", text: "–" }), el("span", { class: "sub", text: "not run" })])]);
           const step = typeof value === "number" ? heatStep(value) : null;
           const style = step === null ? "" : `background:var(--heat-${step});color:var(--heat-fg-${step})`;
           return el("td", {}, [el("div", { class: "heat", style }, [
-            el("span", { class: "value", text: format(info.primary_metric, value, info.percent_metrics) + (value === best && models.length > 1 ? "  ▲" : "") }),
+            el("span", { class: "value", text: format(info.primary_metric, value, info.percent_metrics) + (value === best && series.length > 1 ? "  ▲" : "") }),
             el("span", { class: "sub", text: `${format("cost", summary.cost_per_run, [])} · ${format("seconds", summary.seconds_per_run, [])} per run` }),
           ])]);
         }),
@@ -453,15 +461,15 @@ td .metric-help { font-size: 12.5px; color: var(--muted); margin-top: 2px; max-w
     });
     const ramp = el("span", { class: "ramp", "aria-hidden": "true" }, [0, 1, 2, 3, 4, 5, 6].map((step) => el("span", { style: `background:var(--heat-${step})` })));
     return el("section", { class: "section" }, [
-      sectionHead("Leaderboard", "Each cell shows the agent's primary metric over all cases and repeats, with average cost and wall time per agent run. ▲ marks the best model for that agent."),
+      sectionHead("Leaderboard", `Each cell shows the agent's primary metric over all cases and repeats, with average cost and wall time per agent run. ▲ marks the best ${seriesNoun} for that agent.`),
       el("div", { class: "table-wrap" }, [el("table", {}, [el("thead", {}, [header]), el("tbody", {}, body)])]),
       el("div", { class: "heat-legend" }, [el("span", { text: "0%" }), ramp, el("span", { text: "100%" })]),
     ]);
   }
 
   function legend() {
-    return el("div", { class: "legend" }, models.map((model) => el("span", {}, [
-      el("span", { class: "swatch", style: `background:${seriesColor(model)}` }), model,
+    return el("div", { class: "legend" }, series.map((name) => el("span", {}, [
+      el("span", { class: "swatch", style: `background:${seriesColor(name)}` }), name,
     ])));
   }
 
@@ -470,14 +478,14 @@ td .metric-help { font-size: 12.5px; color: var(--muted); margin-top: 2px; max-w
     const groups = info.percent_metrics.map((metric) => el("div", { class: "bar-group" }, [
       el("div", { class: "bar-group-label", text: humanize(metric) }),
       metricHelp(task, metric) ? el("div", { class: "bar-group-help", text: metricHelp(task, metric) }) : null,
-      ...models.map((model) => {
-        const value = (row(model, task) || {})[metric];
+      ...series.map((name) => {
+        const value = (row(name, task) || {})[metric];
         const hasValue = typeof value === "number";
         const bar = hasValue
-          ? el("div", { class: "bar", tabindex: "0", role: "img", "aria-label": `${model} ${humanize(metric)} ${formatPercent(value)}`,
-            style: `width:${Math.max(0, Math.min(100, value * 100))}%;background:${seriesColor(model)}` })
+          ? el("div", { class: "bar", tabindex: "0", role: "img", "aria-label": `${name} ${humanize(metric)} ${formatPercent(value)}`,
+            style: `width:${Math.max(0, Math.min(100, value * 100))}%;background:${seriesColor(name)}` })
           : null;
-        if (bar) attachTooltip(bar, (node) => showTooltip(node, formatPercent(value), seriesColor(model), model, humanize(metric)));
+        if (bar) attachTooltip(bar, (node) => showTooltip(node, formatPercent(value), seriesColor(name), name, humanize(metric)));
         return el("div", { class: "bar-row" }, [
           el("div", { class: "bar-track" }, [bar]),
           el("div", { class: "bar-value", text: hasValue ? formatPercent(value) : "n/a" }),
@@ -514,11 +522,11 @@ td .metric-help { font-size: 12.5px; color: var(--muted); margin-top: 2px; max-w
   function renderScatter(container, note, task, xMetric) {
     const info = data.tasks[task];
     const yMetric = info.primary_metric;
-    const points = models.map((model) => ({ model, summary: row(model, task) }))
+    const points = series.map((name) => ({ name, summary: row(name, task) }))
       .filter((point) => point.summary)
       .map((point) => ({ ...point, x: point.summary[xMetric], y: point.summary[yMetric] }));
     const plotted = points.filter((point) => typeof point.x === "number" && point.x > 0 && typeof point.y === "number");
-    const skipped = points.filter((point) => !plotted.includes(point)).map((point) => point.model);
+    const skipped = points.filter((point) => !plotted.includes(point)).map((point) => point.name);
     note.textContent = skipped.length ? `Not plotted (no ${xMetric.includes("cost") ? "price" : "value"}): ${skipped.join(", ")}.` : "";
     container.replaceChildren();
     if (!plotted.length) {
@@ -550,7 +558,7 @@ td .metric-help { font-size: 12.5px; color: var(--muted); margin-top: 2px; max-w
     const yScale = (value) => innerHeight - value * innerHeight;
 
     const svg = svgEl("svg", { viewBox: `0 0 ${width} ${PLOT_HEIGHT}`, role: "img",
-      "aria-label": `${humanize(yMetric)} against ${humanize(xMetric)} per model` });
+      "aria-label": `${humanize(yMetric)} against ${humanize(xMetric)} per ${seriesNoun}` });
     const plot = svgEl("g", { transform: `translate(${margin.left},${margin.top})` });
     svg.appendChild(plot);
 
@@ -577,14 +585,14 @@ td .metric-help { font-size: 12.5px; color: var(--muted); margin-top: 2px; max-w
       const cx = xScale(point.x);
       const cy = yScale(point.y);
       const group = svgEl("g", { tabindex: "0", role: "img",
-        "aria-label": `${point.model}: ${format(yMetric, point.y, info.percent_metrics)} at ${format(xMetric, point.x, [])}` });
+        "aria-label": `${point.name}: ${format(yMetric, point.y, info.percent_metrics)} at ${format(xMetric, point.x, [])}` });
       group.appendChild(svgEl("circle", { cx, cy, r: 14, fill: "transparent" }));
-      group.appendChild(svgEl("circle", { cx, cy, r: 6, fill: seriesColor(point.model), stroke: "var(--surface)", "stroke-width": 2 }));
+      group.appendChild(svgEl("circle", { cx, cy, r: 6, fill: seriesColor(point.name), stroke: "var(--surface)", "stroke-width": 2 }));
       const nearRight = cx > innerWidth - 110;
       const label = svgEl("text", { x: nearRight ? cx - 11 : cx + 11, y: cy + 4, "text-anchor": nearRight ? "end" : "start", "font-size": 12, fill: "var(--ink-2)" });
-      label.textContent = point.model;
+      label.textContent = point.name;
       group.appendChild(label);
-      attachTooltip(group, (node) => showTooltip(node, format(yMetric, point.y, info.percent_metrics), seriesColor(point.model), point.model,
+      attachTooltip(group, (node) => showTooltip(node, format(yMetric, point.y, info.percent_metrics), seriesColor(point.name), point.name,
         `${humanize(yMetric)} at ${format(xMetric, point.x, [])} ${humanize(xMetric).toLowerCase()}`));
       plot.appendChild(group);
     });
@@ -620,13 +628,13 @@ td .metric-help { font-size: 12.5px; color: var(--muted); margin-top: 2px; max-w
   function numbersTable(task) {
     const info = data.tasks[task];
     const metrics = [...info.metrics, ...data.usage_metrics];
-    const header = el("tr", {}, [el("th", { text: "Metric" }), ...models.map((model) => el("th", { class: "num", text: model }))]);
+    const header = el("tr", {}, [el("th", { text: "Metric" }), ...series.map((name) => el("th", { class: "num", text: name }))]);
     const body = metrics.map((metric) => el("tr", {}, [
       el("td", {}, [
         el("div", { text: humanize(metric) }),
         metricHelp(task, metric) ? el("div", { class: "metric-help", text: metricHelp(task, metric) }) : null,
       ]),
-      ...models.map((model) => el("td", { class: "num", text: format(metric, (row(model, task) || {})[metric], info.percent_metrics) })),
+      ...series.map((name) => el("td", { class: "num", text: format(metric, (row(name, task) || {})[metric], info.percent_metrics) })),
     ]));
     return el("div", { class: "table-wrap" }, [el("table", {}, [el("thead", {}, [header]), el("tbody", {}, body)])]);
   }
@@ -634,18 +642,18 @@ td .metric-help { font-size: 12.5px; color: var(--muted); margin-top: 2px; max-w
   function perCaseTable(task) {
     const info = data.tasks[task];
     const ran = casesRun(task);
-    const header = el("tr", {}, [el("th", { text: "Case" }), ...models.map((model) => el("th", { class: "num", text: model }))]);
+    const header = el("tr", {}, [el("th", { text: "Case" }), ...series.map((name) => el("th", { class: "num", text: name }))]);
     const body = data.matrix.cases.map((caseName) => el("tr", {}, ran.includes(caseName) ? [
       el("td", { class: "mono", text: caseName }),
-      ...models.map((model) => {
-        const summary = row(model, task, caseName);
+      ...series.map((name) => {
+        const summary = row(name, task, caseName);
         return el("td", { class: "num", text: summary
           ? `${format(info.primary_metric, summary[info.primary_metric], info.percent_metrics)} · ${format("cost", summary.cost_per_run, [])}`
           : "–" });
       }),
     ] : [
       el("td", { class: "mono muted", text: caseName }),
-      el("td", { class: "muted", colspan: String(models.length), text: "Not run: this case has nothing for this agent to check" }),
+      el("td", { class: "muted", colspan: String(series.length), text: "Not run: this case has nothing for this agent to check" }),
     ]));
     return el("div", { class: "section" }, [
       el("h3", { text: `${humanize(info.primary_metric)} and cost per run, by case` }),
@@ -654,9 +662,36 @@ td .metric-help { font-size: 12.5px; color: var(--muted); margin-top: 2px; max-w
     ]);
   }
 
+  function diffLine(line) {
+    const kind = line.startsWith("@@") ? "hunk" : line.startsWith("+") ? "added" : line.startsWith("-") ? "removed" : null;
+    return el("span", { class: kind }, [line + "\n"]);
+  }
+
+  function renderPrompts(task) {
+    const prompts = (agents[task] && agents[task].prompts) || {};
+    const names = Object.keys(prompts);
+    if (names.length < 2) return null;
+    return el("div", { class: "section prompts" }, [
+      el("h3", { text: "Prompts compared" }),
+      el("p", { class: "secondary", text: "Baseline is the prompt the advisor ships with. Each variant shows its instructions as a diff against baseline; input says how the agent's input is built." }),
+      ...names.map((name) => {
+        const prompt = prompts[name];
+        const body = prompt.diff && prompt.diff.length
+          ? el("pre", { class: "diff" }, prompt.diff.slice(2).map(diffLine))
+          : el("pre", { text: name === "baseline" ? prompt.instructions.trim() : "Same instructions as baseline." });
+        return el("details", { class: "instructions" }, [
+          el("summary", {}, [el("span", { class: "mono", text: name }), ` · input: ${prompt.input} · ${prompt.prompt_fingerprint}`,
+            prompt.description ? ` · ${prompt.description}` : ""]),
+          body,
+        ]);
+      }),
+    ]);
+  }
+
   function renderAgent(task) {
     const info = data.tasks[task];
     const agent = agents[task];
+    const prompts = renderPrompts(task);
     return el("div", { class: "agent", id: `agent-${task}`, role: "tabpanel" }, [
       el("div", { class: "agent-head" }, [
         el("h2", { text: agentName(task) }),
@@ -666,8 +701,9 @@ td .metric-help { font-size: 12.5px; color: var(--muted); margin-top: 2px; max-w
           el("span", { class: "pill", text: coverageText(task) }),
           agent ? el("span", { class: "pill" }, ["Prompt ", el("span", { class: "mono", text: agent.prompt_fingerprint })]) : null,
         ]),
-        agent ? el("details", { class: "instructions" }, [el("summary", { text: "Agent instructions used in this run" }), el("pre", { text: agent.instructions.trim() })]) : null,
+        agent && !prompts ? el("details", { class: "instructions" }, [el("summary", { text: "Agent instructions used in this run" }), el("pre", { text: agent.instructions.trim() })]) : null,
       ]),
+      prompts,
       el("div", { class: "panels" }, [renderQualityBars(task), renderTradeoff(task)]),
       el("div", { class: "section" }, [el("h3", { text: "All numbers" }), numbersTable(task)]),
       perCaseTable(task),
@@ -691,7 +727,7 @@ td .metric-help { font-size: 12.5px; color: var(--muted); margin-top: 2px; max-w
     }
     select(initial);
     return el("section", { class: "section" }, [
-      sectionHead("Agents", "Choose an agent to compare models on every quality metric, cost, tokens and latency. Each agent only runs on the cases that contain its kind of input."),
+      sectionHead("Agents", `Choose an agent to compare each ${seriesNoun} on every quality metric, cost, tokens and latency. Each agent only runs on the cases that contain its kind of input.`),
       el("div", { class: "tabs", role: "tablist", "aria-label": "Agents" }, tabs),
       holder,
     ]);
@@ -700,10 +736,11 @@ td .metric-help { font-size: 12.5px; color: var(--muted); margin-top: 2px; max-w
   function renderPricing() {
     const fields = [["input", "Input"], ["cached_input", "Cached input"], ["cache_write", "Cache write"], ["output", "Output"]];
     const header = el("tr", {}, [el("th", { text: "Model" }), ...fields.map(([, label]) => el("th", { class: "num", text: label }))]);
-    const body = models.map((model) => {
+    const body = data.matrix.series.map((name) => {
       const price = data.pricing.models[model];
+      const swatch = byPrompt ? null : el("span", { class: "swatch", style: `background:${seriesColor(name)}` });
       return el("tr", {}, [
-        el("td", {}, [el("span", { class: "legend" }, [el("span", {}, [el("span", { class: "swatch", style: `background:${seriesColor(model)}` }), model])])]),
+        el("td", {}, [el("span", { class: "legend" }, [el("span", {}, [swatch, model])])]),
         ...fields.map(([field]) => el("td", { class: "num", text: price && typeof price[field] === "number" ? formatPrice(price[field]) : "n/a" })),
       ]);
     });

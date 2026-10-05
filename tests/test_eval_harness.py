@@ -4,7 +4,8 @@ from types import SimpleNamespace
 import pytest
 
 from evals.cases import EvalCase
-from evals.harness import Matrix, new_run_dir, output_path, run_matrix, run_task
+from evals.harness import Matrix, VariantRunner, new_run_dir, output_path, resolve_matrix, run_matrix, run_task
+from evals.prompts import load_variants
 from evals.storage import read_json, read_jsonl
 from evals.summary import write_summary
 from evals.tasks import TASKS
@@ -107,10 +108,12 @@ class FakeRunner:
         self.profile = SimpleNamespace(name=name)
         self.calls = []
         self.prompts = []
+        self.agents = []
         self.failing_prompts = failing_prompts
 
     def run(self, agent, prompt, context=None):
         self.prompts.append((agent.name, prompt))
+        self.agents.append(agent)
         failed = any(marker in prompt for marker in self.failing_prompts)
         self.calls.append(CallRecord(
             agent=agent.name, model=self.profile.name, status="ModelBehaviorError" if failed else "ok",
@@ -178,7 +181,7 @@ def test_run_task_records_output_run_and_tagged_calls(tmp_path, case):
     assert output["prediction"][0]["policy_id"] == "policy-1"
     [run] = read_jsonl(run_dir / "runs.jsonl")
     assert run == {"model": "claude-haiku-4-5", "case": "demo", "repeat": 2, "task": "policy_attachments",
-                   "status": "ok", "wall_seconds": run["wall_seconds"], "calls": 1}
+                   "prompt": "baseline", "status": "ok", "wall_seconds": run["wall_seconds"], "calls": 1}
     [call] = read_jsonl(run_dir / "calls.jsonl")
     assert (call["case"], call["repeat"], call["task"], call["agent"]) == (
         "demo", 2, "policy_attachments", POLICY_ATTACHMENT_AGENT.name,
@@ -239,3 +242,97 @@ def test_new_run_dirs_never_collide(tmp_path):
 
     assert first != second
     assert first.is_dir() and second.is_dir()
+
+
+@pytest.fixture
+def prompts_root(tmp_path):
+    folder = tmp_path / "prompts" / "unauthenticated_endpoints"
+    folder.mkdir(parents=True)
+    (folder / "strict.yaml").write_text(
+        "description: Stricter.\ninput: handler-names\ninstructions: Only the listed handlers.\n", encoding="utf-8",
+    )
+    return tmp_path / "prompts"
+
+
+def test_variant_run_swaps_instructions_and_input_and_tags_the_prompt(tmp_path, case, prompts_root):
+    run_dir = tmp_path / "run"
+    runner = FakeRunner()
+    variant = load_variants("unauthenticated_endpoints", prompts_root)["strict"]
+
+    run_task(run_dir, runner, case, case.load_labels(), 1, TASKS["unauthenticated_endpoints"], variant)
+
+    [agent] = runner.agents
+    assert agent.instructions == "Only the listed handlers."
+    [prompt] = prompts_for(runner, ENDPOINT_RISK_AGENT)
+    assert "http_handlers: create" in prompt
+    assert read_json(output_path(run_dir, "claude-haiku-4-5", "demo", 1, "unauthenticated_endpoints", "strict"))
+    [run] = read_jsonl(run_dir / "runs.jsonl")
+    [call] = read_jsonl(run_dir / "calls.jsonl")
+    assert run["prompt"] == call["prompt"] == "strict"
+
+
+def test_variant_runner_only_replaces_its_own_agent():
+    runner = FakeRunner()
+    replacement = ENDPOINT_RISK_AGENT.clone(instructions="Only the listed handlers.")
+    variant_runner = VariantRunner(runner, ENDPOINT_RISK_AGENT, replacement)
+
+    variant_runner.run(ENDPOINT_RISK_AGENT, "endpoints")
+    variant_runner.run(SENSITIVENESS_AGENT, "Environment variables")
+
+    assert runner.agents == [replacement, SENSITIVENESS_AGENT]
+
+
+def test_prompt_matrix_reports_one_series_per_model_and_prompt(tmp_path, case, prompts_root):
+    run_dir = tmp_path / "run"
+    pricing = tmp_path / "pricing.yaml"
+    pricing.write_text("usd_per_million_tokens: {}\n")
+    matrix = Matrix(models=["claude-haiku-4-5"], cases=["demo"], repeats=1,
+                    tasks=["unauthenticated_endpoints", "sensitive_env_vars"],
+                    prompts={"unauthenticated_endpoints": ["baseline", "strict"]})
+
+    run_matrix(matrix, run_dir, [case], create_runner=lambda profile: FakeRunner(profile.name), prompts_root=prompts_root)
+    write_summary(run_dir, expected_root=tmp_path / "expected", resources_root=tmp_path / "resources",
+                  pricing_path=pricing)
+
+    results = read_json(run_dir / "results.json")
+    assert [series["name"] for series in results["matrix"]["series"]] == [
+        "claude-haiku-4-5 · baseline", "claude-haiku-4-5 · strict",
+    ]
+    overall = {(row["series"], row["task"]) for row in results["rows"] if row["case"] == "all"}
+    assert overall == {
+        ("claude-haiku-4-5 · baseline", "unauthenticated_endpoints"),
+        ("claude-haiku-4-5 · strict", "unauthenticated_endpoints"),
+        ("claude-haiku-4-5 · baseline", "sensitive_env_vars"),
+    }
+    prompts = results["metadata"]["agents"]["unauthenticated_endpoints"]["prompts"]
+    assert prompts["strict"]["input"] == "handler-names"
+    assert "+Only the listed handlers." in prompts["strict"]["diff"]
+    assert "model · prompt" in (run_dir / "summary.md").read_text()
+
+
+def test_model_matrix_keeps_model_names_as_series(tmp_path, case):
+    run_dir = tmp_path / "run"
+    pricing = tmp_path / "pricing.yaml"
+    pricing.write_text("usd_per_million_tokens: {}\n")
+    matrix = Matrix(models=["claude-haiku-4-5"], cases=["demo"], repeats=1, tasks=["sensitive_env_vars"])
+
+    run_matrix(matrix, run_dir, [case], create_runner=lambda profile: FakeRunner(profile.name))
+    write_summary(run_dir, expected_root=tmp_path / "expected", resources_root=tmp_path / "resources",
+                  pricing_path=pricing)
+
+    results = read_json(run_dir / "results.json")
+    assert [series["name"] for series in results["matrix"]["series"]] == ["claude-haiku-4-5"]
+    assert {row["series"] for row in results["rows"]} == {"claude-haiku-4-5"}
+
+
+@pytest.mark.parametrize(("prompts", "problem"), [
+    ({"unauthenticated_endpoints": ["missing"]}, "unknown prompt unauthenticated_endpoints:missing"),
+    ({"bucket_acl": ["baseline"]}, "not in the run"),
+    ({"unauthenticated_endpoints": ["strict", "strict"]}, "without duplicates"),
+])
+def test_resolve_matrix_rejects_bad_prompt_selections(tmp_path, prompts_root, prompts, problem):
+    matrix_path = tmp_path / "matrix.yaml"
+    matrix_path.write_text("models: [claude-haiku-4-5]\ncases: [demo]\nrepeats: 1\ntasks: all\n")
+
+    with pytest.raises(ValueError, match=problem):
+        resolve_matrix(matrix_path, tasks=["unauthenticated_endpoints"], prompts=prompts, prompts_root=prompts_root)

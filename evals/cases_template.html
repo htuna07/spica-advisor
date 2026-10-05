@@ -143,6 +143,9 @@ fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 4px; min-width:
 legend { font-size: 12.5px; color: var(--muted); padding: 0; margin-bottom: 4px; }
 .check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .check span { overflow-wrap: anywhere; }
+.check small { display: block; font-size: 12.5px; color: var(--muted); }
+.check.top { align-items: flex-start; }
+.check.top input { margin-top: 3px; }
 .estimate { font-size: 15px; }
 .estimate strong { font-size: 20px; }
 .run-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid var(--grid); padding-top: 14px; }
@@ -612,11 +615,18 @@ legend { font-size: 12.5px; color: var(--muted); padding: 0; margin-bottom: 4px;
 
   /* ---------- run panel ---------- */
 
+  const BASELINE = "baseline";
+  const promptTasks = () => config.tasks.filter((task) => ((config.prompts || {})[task] || []).length > 1);
+
   function runSelection() {
     if (!state.run) {
       state.run = {
+        mode: "models",
         models: new Set(config.default_models),
+        model: config.default_models[0] || config.models[0],
         tasks: new Set(config.tasks),
+        promptTasks: new Set(promptTasks()),
+        prompts: Object.fromEntries(promptTasks().map((task) => [task, new Set(config.prompts[task].map((prompt) => prompt.name))])),
         cases: null,
         repeats: config.default_repeats,
       };
@@ -625,6 +635,18 @@ legend { font-size: 12.5px; color: var(--muted); padding: 0; margin-bottom: 4px;
     if (state.run.cases === null) state.run.cases = new Set(saved);
     [...state.run.cases].forEach((name) => { if (!state.saved.has(name)) state.run.cases.delete(name); });
     return state.run;
+  }
+
+  function runPlan(selection) {
+    if (selection.mode === "prompts") {
+      const tasks = promptTasks().filter((task) => selection.promptTasks.has(task));
+      return {
+        models: [selection.model],
+        tasks,
+        prompts: Object.fromEntries(tasks.map((task) => [task, config.prompts[task].map((prompt) => prompt.name).filter((name) => selection.prompts[task].has(name))])),
+      };
+    }
+    return { models: [...selection.models], tasks: [...selection.tasks], prompts: {} };
   }
 
   function estimate(selection) {
@@ -636,14 +658,16 @@ legend { font-size: 12.5px; color: var(--muted); padding: 0; margin-bottom: 4px;
       const values = keys.filter((key) => key.startsWith(`${model}|${task}|`)).map((key) => costs[key]).filter((value) => typeof value === "number");
       return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
     };
-    selection.models.forEach((model) => selection.tasks.forEach((task) => selection.cases.forEach((caseName) => {
+    const plan = runPlan(selection);
+    plan.models.forEach((model) => plan.tasks.forEach((task) => selection.cases.forEach((caseName) => {
+      const promptCount = (plan.prompts[task] || [BASELINE]).length;
       const key = `${model}|${task}|${caseName}`;
-      if (typeof costs[key] === "number") { total += costs[key]; return; }
+      if (typeof costs[key] === "number") { total += costs[key] * promptCount; return; }
       const taskRanOnCase = keys.some((other) => other.endsWith(`|${task}|${caseName}`));
       const caseWasRun = keys.some((other) => other.endsWith(`|${caseName}`));
       if (caseWasRun && !taskRanOnCase) return;
       const fallback = average(model, task);
-      if (fallback === null) unknown += 1; else total += fallback;
+      if (fallback === null) unknown += 1; else total += fallback * promptCount;
     })));
     return { total: total * selection.repeats, unknown };
   }
@@ -661,12 +685,43 @@ legend { font-size: 12.5px; color: var(--muted); padding: 0; margin-bottom: 4px;
     ]);
   }
 
+  function radioGroup(legend, values, current, onPick, labelOf) {
+    return el("fieldset", {}, [
+      el("legend", { text: legend }),
+      ...values.map((value) => {
+        const radio = el("input", { type: "radio", name: `run-${legend}`, id: `run-${legend}-${value}`.replace(/[^A-Za-z0-9_-]/g, "-"), checked: value === current });
+        radio.addEventListener("change", () => { if (radio.checked) { onPick(value); renderRunPanel(); } });
+        return el("label", { class: "check" }, [radio, el("span", { text: labelOf ? labelOf(value) : value })]);
+      }),
+    ]);
+  }
+
+  function promptGroup(task, selected) {
+    return el("fieldset", {}, [
+      el("legend", { text: `${humanize(task)} prompts` }),
+      ...config.prompts[task].map((prompt) => {
+        const box = el("input", { type: "checkbox", id: `run-prompt-${task}-${prompt.name}`, checked: selected.has(prompt.name) });
+        box.addEventListener("change", () => { if (box.checked) selected.add(prompt.name); else selected.delete(prompt.name); renderRunPanel(); });
+        return el("label", { class: "check top" }, [box, el("span", {}, [
+          el("span", { class: "mono", text: prompt.name }),
+          prompt.description ? el("small", { text: prompt.description }) : null,
+        ])]);
+      }),
+    ]);
+  }
+
   function runBlocker(selection) {
     if (!state.connected) return "Open this page on claude.ai to run the benchmark.";
     if (!state.canWrite) return "You can view these cases but not change them or start runs.";
     if (anyDirty()) return "Save or discard your case changes first; the benchmark runs on saved cases.";
     if (state.runs.some((run) => ACTIVE_RUN.includes(run.status))) return "A run is already waiting or in progress.";
-    if (!selection.models.size || !selection.tasks.size || !selection.cases.size) return "Pick at least one model, agent and case.";
+    const plan = runPlan(selection);
+    if (selection.mode === "prompts") {
+      if (!plan.tasks.length || !selection.cases.size) return "Pick at least one agent and case.";
+      if (plan.tasks.some((task) => !plan.prompts[task].length)) return "Pick at least one prompt for each agent.";
+    } else if (!plan.models.length || !plan.tasks.length || !selection.cases.size) {
+      return "Pick at least one model, agent and case.";
+    }
     return "";
   }
 
@@ -684,10 +739,24 @@ legend { font-size: 12.5px; color: var(--muted); padding: 0; margin-bottom: 4px;
       : "The request is saved for Claude to pick up.";
     const button = el("button", { class: "button primary", type: "button", id: "run-benchmark", text: state.sending ? "Sending…" : "Run benchmark",
       disabled: Boolean(blocker) || state.sending, onclick: () => requestRun(selection, button) });
-    panel.replaceChildren(
-      el("div", { class: "run-grid" }, [
+    const modeGroup = promptTasks().length
+      ? radioGroup("Compare", ["models", "prompts"], selection.mode, (mode) => { selection.mode = mode; },
+        (mode) => (mode === "models" ? "Models, with the shipped prompts" : "Prompts, on one model"))
+      : null;
+    const choices = selection.mode === "prompts"
+      ? [
+        radioGroup("Model", config.models, selection.model, (model) => { selection.model = model; }),
+        checkboxGroup("Agents", promptTasks(), selection.promptTasks, humanize),
+        ...promptTasks().filter((task) => selection.promptTasks.has(task)).map((task) => promptGroup(task, selection.prompts[task])),
+      ]
+      : [
         checkboxGroup("Models", config.models, selection.models),
         checkboxGroup("Agents", config.tasks, selection.tasks, humanize),
+      ];
+    panel.replaceChildren(
+      el("div", { class: "run-grid" }, [
+        modeGroup,
+        ...choices,
         checkboxGroup("Cases", [...state.saved.keys()].sort(), selection.cases),
         el("fieldset", {}, [el("legend", { text: "Repeats" }), repeats,
           el("p", { class: "reason", text: "Repeating shows how consistent each model is. One repeat is enough while you iterate on cases." })]),
@@ -709,11 +778,14 @@ legend { font-size: 12.5px; color: var(--muted); padding: 0; margin-bottom: 4px;
   }
 
   async function requestRun(selection, button) {
+    const plan = runPlan(selection);
     const options = {
-      models: [...selection.models], tasks: [...selection.tasks], cases: [...selection.cases].sort(), repeats: selection.repeats,
+      mode: selection.mode, models: plan.models, tasks: plan.tasks, prompts: plan.prompts,
+      cases: [...selection.cases].sort(), repeats: selection.repeats,
     };
     const id = new Date().toISOString().replace(/[:.]/g, "-");
-    const text = `Run benchmark ${id}: models ${options.models.join(", ")}; agents ${options.tasks.join(", ")}; cases ${options.cases.join(", ")}; ${options.repeats} repeat(s). Sync the cases from this artifact's database into the repo, validate them, run the benchmark and republish the report. Progress goes to runs/${id}.`;
+    const promptText = Object.entries(options.prompts).map(([task, names]) => `${task}=${names.join(",")}`).join(" ");
+    const text = `Run benchmark ${id}: models ${options.models.join(", ")}; ${promptText ? `prompts ${promptText}; ` : ""}agents ${options.tasks.join(", ")}; cases ${options.cases.join(", ")}; ${options.repeats} repeat(s). Sync the cases from this artifact's database into the repo, validate them, run the benchmark and republish the report. Progress goes to runs/${id}.`;
     state.sending = true;
     renderRunPanel();
     let sent = false;
@@ -754,7 +826,9 @@ legend { font-size: 12.5px; color: var(--muted); padding: 0; margin-bottom: 4px;
         el("div", { class: "row" }, [
           el("span", { class: `pill ${run.status}`, text: humanize(run.status || "unknown") }),
           el("span", { class: "muted", text: (run.requested_at || "").replace("T", " ").slice(0, 16) + " UTC" }),
-          el("span", { class: "secondary", text: `${(options.models || []).length} models · ${(options.tasks || []).length} agents · ${(options.cases || []).length} cases · ${options.repeats || "?"} repeat(s)` }),
+          el("span", { class: "secondary", text: options.mode === "prompts"
+            ? `${(options.models || [])[0]} · ${Object.values(options.prompts || {}).reduce((sum, names) => sum + names.length, 0)} prompts · ${(options.tasks || []).length} agents · ${(options.cases || []).length} cases · ${options.repeats || "?"} repeat(s)`
+            : `${(options.models || []).length} models · ${(options.tasks || []).length} agents · ${(options.cases || []).length} cases · ${options.repeats || "?"} repeat(s)` }),
           typeof run.cost === "number" ? el("span", { class: "secondary", text: `Cost ${formatCost(run.cost)}` }) : null,
         ]),
         run.message ? el("p", { class: "secondary", text: run.message }) : null,

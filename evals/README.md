@@ -1,6 +1,6 @@
 # Evals
 
-Labeled Spica projects used to compare models on accuracy, cost, token usage and latency.
+Labeled Spica projects used to compare models, and prompt variants, on accuracy, cost, token usage and latency.
 
 Only the LLM agents are evaluated: each label is the output an agent should produce for the input
 the production code gives it. Deterministic code is covered by unit tests in `tests/`.
@@ -11,6 +11,9 @@ python -m evals check spica-orchestrator # validate selected cases
 python -m evals run                      # run evals/matrix.yaml, then summarize
 python -m evals run --models claude-haiku-4-5 --cases synthetic-01 --repeats 1
 python -m evals report evals/runs/<run>  # re-score a run with the current labels and prices
+python -m evals prompts                  # list every agent's prompt variants
+python -m evals run --models gpt-6-luna --tasks unauthenticated_endpoints \
+  --prompts unauthenticated_endpoints=baseline,combined --repeats 3
 ```
 
 `run` refuses to start while any selected case fails `check`. It calls each agent directly with the input the
@@ -21,7 +24,7 @@ evals/runs/<UTC timestamp>/
   matrix.json      # models, cases, repeats and tasks of the run
   runs.jsonl       # one line per agent task run: status, wall time, call count
   calls.jsonl      # one line per agent call: tokens, requests, tool calls, latency, status
-  outputs/<model>/<case>/r<repeat>/<task>.json   # raw agent output
+  outputs/<model>/<case>/r<repeat>/<task>.json   # raw agent output; <task>--<prompt>.json for a prompt variant
   summary.md       # accuracy, consistency, cost, tokens and latency per model and task
   summary.csv      # the same numbers per model, task and case
   results.json     # everything the report page shows, including prices and agent prompts
@@ -34,6 +37,25 @@ To refresh the published page, re-run or re-report, then ask Claude to republish
 
 Prices live in `evals/pricing.yaml` in USD per million tokens. A model without prices shows `n/a` for cost.
 Failed runs count as empty predictions, and their tokens still count toward cost.
+
+## Prompt variants
+
+A run can compare prompts instead of, or as well as, models. Each pair of model and prompt is one series in the
+summary and on the report page.
+
+```
+evals/prompts/<task>/<variant>.yaml
+  description: one line shown on the report and cases pages
+  instructions: |      # optional; replaces the agent's instructions, defaults to the production ones
+    ...
+  input: handler-names # optional; a named input builder from TASKS[<task>].inputs, defaults to the production input
+```
+
+`baseline` is built in: it is always the prompt the advisor ships with, so a file of that name is rejected. Agents
+left out of `--prompts` run with baseline. The report shows each variant's instructions as a diff against baseline.
+Input builders live in `evals/inputs.py`; they change what the agent is shown, such as listing each function's HTTP
+handler names. To ship a winning variant, copy its instructions into the agent's `prompts.py` and move its input
+builder into the investigation's steps.
 
 ## Case layout
 
@@ -57,11 +79,16 @@ same rule: only `evals/expected/synthetic-*/` is committed, because real labels 
 | File | Agent and its input | Format | Rules enforced by `check` |
 |---|---|---|---|
 | `sensitive-env-vars.yaml` | Env var sensitiveness classifier, given every env var name | `KEY: low \| medium \| high` | Every env var key in the case, and only those |
-| `unauthenticated-endpoints.yaml` | Endpoint risk analyst, given the source of every function with a public http trigger | `<function _id>: {<handler>: low \| medium \| high}` | Every function with a public http trigger, and only those; handlers must appear in that function's source; `{}` when every handler checks auth |
+| `unauthenticated-endpoints.yaml` | Endpoint risk analyst, given the source of every function with a public http trigger | `<function _id>: {<handler>: low \| medium \| high}` | Every function with a public http trigger, and only those; handlers must be that function's public http triggers and appear in its source; `{}` when every handler checks auth |
 | `policy-attachments.yaml` | Policy attachment finder, given every function's source | list of `{function_id, policy_id, policy_name}` | `function_id` (where the policy is attached) must exist; set `policy_id` for a hardcoded id and/or `policy_name` for the env var name when it comes from `process.env` |
 | `bucket-acl.yaml` | Bucket ACL evaluator, given one bucket schema at a time | `<bucket _id>: {includes_sensitive_information, read, write}` with `read`/`write` in `applied \| applied_but_in_risk \| not_applied` | Any existing buckets you want scored |
 
 A public http trigger is `type: http`, `active: true` and not `options.authorize: true`, the same filter the investigation applies before calling the agent.
+
+Endpoints that are public by design are still labeled, at `low`: sign-in, registration, password reset and email
+verification flows, and handlers that verify something else before acting, such as a captcha, a one-time code or a
+webhook signature. A handler that only forwards to another handler takes that handler's answer, so a wrapper around
+an authenticated handler is not labeled.
 
 ## Replacing the dummy data
 
@@ -84,6 +111,7 @@ the machine: their code and env var values stay in `resources/<case>`.
 - `python -m evals import-cases <file>` applies the page's cases to the repo: it rewrites labels and synthetic
   resources, refuses unsafe paths and empty case lists, and moves cases deleted on the page to `evals/.deleted/`.
 
-The page's "Run benchmark" button saves a `runs/<id>` request and sends a comment to the Claude session watching the
-artifact. That session imports the cases, runs `check`, then `run` with the requested models, agents, cases and
-repeats, republishes `report.html` and `cases.html` from the new run, and records progress in `runs/<id>`.
+The run panel compares either models, with the shipped prompts, or the prompt variants of one model. The page's
+"Run benchmark" button saves a `runs/<id>` request and sends a comment to the Claude session watching the
+artifact. That session imports the cases, runs `check`, then `run` with the requested models, prompts, agents, cases
+and repeats, republishes `report.html` and `cases.html` from the new run, and records progress in `runs/<id>`.

@@ -37,8 +37,12 @@ def prepare_for_analysis(context: UnauthenticatedEndpointsContext):
     ]
 
 
-def analyze_endpoints(context: UnauthenticatedEndpointsContext):
-    prompts = endpoint_risk_inputs(context.analysis_inputs)
+def endpoint_risk_prompts(context: UnauthenticatedEndpointsContext):
+    return endpoint_risk_inputs(context.analysis_inputs)
+
+
+def analyze_endpoints(context: UnauthenticatedEndpointsContext, build_prompts=endpoint_risk_prompts):
+    prompts = build_prompts(context)
     if len(prompts) > 1:
         LOGGER.info("Analyzing %d functions in %d batches", len(context.analysis_inputs), len(prompts))
     for prompt in prompts:

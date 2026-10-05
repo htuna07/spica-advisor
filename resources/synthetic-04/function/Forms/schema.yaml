@@ -1,0 +1,35 @@
+_id: syn4-fn-forms
+name: Forms
+language: javascript
+timeout: 60
+triggers:
+  submitForm:
+    type: http
+    active: true
+    options:
+      method: Post
+      path: /forms/submit
+      preflight: true
+      authorize: false
+  confirmDeletion:
+    type: http
+    active: true
+    options:
+      method: Get
+      path: /forms/confirm-deletion
+      preflight: true
+      authorize: false
+  exportForms:
+    type: http
+    active: true
+    options:
+      method: Get
+      path: /forms/export
+      preflight: true
+      authorize: false
+  onFormInsert:
+    type: bucket
+    active: true
+    options:
+      bucket: 65b4a1d3f4c5e6a7b8c9d004
+      type: INSERT

@@ -3,11 +3,19 @@ from pathlib import Path
 
 from evals.cases import EXPECTED_ROOT, RESOURCES_ROOT, find_cases
 from evals.harness import new_run_dir, resolve_matrix, run_matrix, validated_cases
+from evals.prompts import all_variants, describe_variant
 from evals.storage import read_json, write_json
 from evals.summary import write_summary
 from evals.validation import check_case
 from evals.workspace import export_cases, import_cases
 from spica_advisor.log import configure_logging
+
+
+def prompt_selection(value):
+    task, separator, names = value.partition("=")
+    if not separator or not task or not names:
+        raise argparse.ArgumentTypeError(f"expected TASK=VARIANT[,VARIANT...], got {value!r}")
+    return task, [name.strip() for name in names.split(",") if name.strip()]
 
 
 def parse_args():
@@ -22,6 +30,10 @@ def parse_args():
     run.add_argument("--cases", nargs="+", metavar="CASE", help="overrides evals/matrix.yaml")
     run.add_argument("--tasks", nargs="+", metavar="TASK", help="overrides evals/matrix.yaml")
     run.add_argument("--repeats", type=int, help="overrides evals/matrix.yaml")
+    run.add_argument("--prompts", nargs="+", type=prompt_selection, metavar="TASK=VARIANT,...",
+                     help="prompt variants to compare per agent; agents left out use baseline")
+
+    commands.add_parser("prompts", help="list the prompt variants of every agent")
 
     report = commands.add_parser("report", help="re-score a finished run with the current labels and prices")
     report.add_argument("run_dir", type=Path)
@@ -55,7 +67,9 @@ def check(names):
 
 def run(args):
     configure_logging(debug=False, log_file=None, log_format="text")
-    matrix = resolve_matrix(models=args.models, cases=args.cases, repeats=args.repeats, tasks=args.tasks)
+    prompts = dict(args.prompts) if args.prompts else None
+    matrix = resolve_matrix(models=args.models, cases=args.cases, repeats=args.repeats, tasks=args.tasks,
+                            prompts=prompts)
     cases = validated_cases(matrix.cases)
     run_dir = new_run_dir()
     print(f"Writing results to {run_dir}")
@@ -67,6 +81,14 @@ def report(run_dir):
     print(f"Summary: {write_summary(run_dir)}")
 
 
+def list_prompts():
+    for task, variants in all_variants().items():
+        print(task)
+        for variant in variants.values():
+            details = describe_variant(task, variant)
+            print(f"  {variant.name}  [{details['prompt_fingerprint']}, input: {variant.input}]  {variant.description}")
+
+
 def main():
     args = parse_args()
     try:
@@ -76,6 +98,8 @@ def main():
             run(args)
         elif args.command == "report":
             report(args.run_dir)
+        elif args.command == "prompts":
+            list_prompts()
         elif args.command == "export-cases":
             write_json(args.output, export_cases())
             print(f"Exported cases to {args.output}")

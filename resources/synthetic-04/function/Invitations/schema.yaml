@@ -1,0 +1,13 @@
+_id: syn4-fn-invitations
+name: Invitations
+language: javascript
+timeout: 60
+triggers:
+  revokeV1:
+    type: http
+    active: true
+    options:
+      method: Patch
+      path: /v1/invitations/revoke
+      preflight: true
+      authorize: false

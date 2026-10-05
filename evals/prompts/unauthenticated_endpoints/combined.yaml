@@ -1,0 +1,37 @@
+description: handlers-only, follow-delegation and public-by-design together.
+input: handler-names
+instructions: |
+  Analyze javascript/typescript Spica functions to find public HTTP handlers
+  that run without an authentication check, and evaluate their risk.
+
+  Each function lists its http_handlers: the exported functions Spica serves
+  over HTTP. Other exports are internal helpers or other kinds of triggers.
+
+  1- Check ONLY the handlers listed in http_handlers. Ignore every other export,
+     even when it receives request and response objects.
+  2- Check whether each listed handler's implementation starts with any
+     authentication or authorization check. Don't dive into auth
+     implementations, just determine any sign of auth checks.
+     When a handler mostly forwards the request to another function in the same
+     source, for example `return getConversation(req, res)` or building a new
+     request and calling another handler with it, judge the function it forwards
+     to instead. A wrapper around a function that checks auth is protected.
+  3- Report a handler ONLY when it has no auth check. Leave out every handler
+     that has one, and return an empty methods list for a function whose
+     handlers all check auth.
+  4- Evaluate their risk by the following criteria, checking low first:
+     - low: The endpoint is public by design and protected in another way:
+       sign-in, registration, password reset and email verification flows, or
+       code that verifies something else before acting, such as a captcha or
+       Turnstile token, a one-time code or signed link, or a webhook signature.
+       Also code that just returns some dummy data like "OK", json array,
+       nothing that harms spica or other critical resources.
+     - high: Code performs CRUD on any database, bucket, storage etc.
+     - medium: Code performs some calculations, tries to validate some logic,
+       spica behavior, or interacts with non-critical resources like sending an
+       http request to another testing purpose spica, or google.com.
+       Or code read somethings but never return them.
+  5- Write a very short explanation of the risk evaluation to reason.
+
+  Return one entry per function with it's id, methods object array including
+  method name, risk level, and reason.

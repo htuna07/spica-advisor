@@ -4,6 +4,7 @@ import yaml
 from pydantic import ValidationError
 
 from evals.cases import LABEL_FILES
+from evals.inputs import public_handler_names
 from spica_advisor.investigations.unauthenticated_endpoints.steps import has_public_endpoint
 from spica_advisor.resources import load_buckets, load_env_vars, load_functions
 
@@ -62,23 +63,24 @@ def appears_in(name, source):
 
 
 def check_unauthenticated_endpoints(labels, functions):
-    public_sources = {
-        function["_id"]: function["content"]
-        for function in functions
-        if has_public_endpoint(function["schema"])
-    }
+    public_functions = {function["_id"]: function for function in functions if has_public_endpoint(function["schema"])}
     labeled = labels.unauthenticated_endpoints
     file = LABEL_FILES["unauthenticated_endpoints"]
-    return [
-        *key_problems("unauthenticated_endpoints", "public function", set(labeled), set(public_sources), set(public_sources)),
-        *(
-            f"{file}: {function_id}.{method} not found in function source"
-            for function_id, methods in labeled.items()
-            if function_id in public_sources
-            for method in sorted(methods)
-            if not appears_in(method, public_sources[function_id])
-        ),
-    ]
+    problems = key_problems(
+        "unauthenticated_endpoints", "public function", set(labeled), set(public_functions), set(public_functions),
+    )
+    for function_id, methods in labeled.items():
+        function = public_functions.get(function_id)
+        if function is None:
+            continue
+        handlers = public_handler_names(function["schema"])
+        for method in sorted(methods):
+            if method not in handlers:
+                problems.append(f"{file}: {function_id}.{method} is not a public http trigger "
+                                f"(public triggers: {', '.join(handlers)})")
+            elif not appears_in(method, function["content"]):
+                problems.append(f"{file}: {function_id}.{method} not found in function source")
+    return problems
 
 
 def check_policy_attachments(labels, functions):

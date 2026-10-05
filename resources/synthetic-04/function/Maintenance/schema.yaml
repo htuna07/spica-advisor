@@ -1,0 +1,21 @@
+_id: syn4-fn-maintenance
+name: Maintenance
+language: javascript
+timeout: 120
+triggers:
+  removeDummyData:
+    type: http
+    active: true
+    options:
+      method: Get
+      path: /maintenance/remove-dummy
+      preflight: true
+      authorize: false
+  health:
+    type: http
+    active: true
+    options:
+      method: Get
+      path: /maintenance/health
+      preflight: true
+      authorize: false

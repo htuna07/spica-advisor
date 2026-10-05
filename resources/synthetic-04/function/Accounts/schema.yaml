@@ -1,0 +1,29 @@
+_id: syn4-fn-accounts
+name: Accounts
+language: javascript
+timeout: 60
+triggers:
+  login:
+    type: http
+    active: true
+    options:
+      method: Post
+      path: /accounts/login
+      preflight: true
+      authorize: false
+  register:
+    type: http
+    active: true
+    options:
+      method: Post
+      path: /accounts/register
+      preflight: true
+      authorize: false
+  forgotPassword:
+    type: http
+    active: true
+    options:
+      method: Post
+      path: /accounts/forgot-password
+      preflight: true
+      authorize: false

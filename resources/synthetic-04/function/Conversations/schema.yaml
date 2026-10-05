@@ -1,0 +1,43 @@
+_id: syn4-fn-conversations
+name: Conversations
+language: javascript
+timeout: 60
+triggers:
+  getConversation:
+    type: http
+    active: true
+    options:
+      method: Get
+      path: /conversations/get
+      preflight: true
+      authorize: false
+  resumeConversation:
+    type: http
+    active: true
+    options:
+      method: Post
+      path: /conversations/resume
+      preflight: true
+      authorize: false
+  confirmAction:
+    type: http
+    active: true
+    options:
+      method: Post
+      path: /conversations/confirm
+      preflight: true
+      authorize: false
+  chat:
+    type: http
+    active: true
+    options:
+      method: Post
+      path: /conversations/chat
+      preflight: true
+      authorize: false
+  purgeConversations:
+    type: schedule
+    active: true
+    options:
+      frequency: "0 3 * * *"
+      timezone: UTC

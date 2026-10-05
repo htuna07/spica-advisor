@@ -8,6 +8,7 @@ import yaml
 
 from evals.cases import EXPECTED_ROOT, RESOURCES_ROOT, find_cases
 from evals.harness import output_path
+from evals.prompts import BASELINE
 from evals.scoring import SCORERS, merge_counts, ratio
 from evals.storage import read_json, read_jsonl, write_json
 from evals.workspace import render_cases_page
@@ -81,11 +82,39 @@ def group(records, *keys):
     return groups
 
 
+def compares_prompts(matrix):
+    return any(names != [BASELINE] for names in (matrix.get("prompts") or {}).values())
+
+
+def series_name(model, prompt, by_prompt):
+    return f"{model} · {prompt}" if by_prompt else model
+
+
+def matrix_series(matrix):
+    by_prompt = compares_prompts(matrix)
+    prompts = list(dict.fromkeys(
+        prompt for task in matrix["tasks"] for prompt in (matrix.get("prompts") or {}).get(task, [BASELINE])
+    ))
+    return [
+        {"name": series_name(model, prompt, by_prompt), "model": model, "prompt": prompt}
+        for model in matrix["models"]
+        for prompt in prompts
+    ]
+
+
+def with_series(records, by_prompt):
+    tagged = []
+    for record in records:
+        prompt = record.get("prompt", BASELINE)
+        tagged.append({**record, "prompt": prompt, "series": series_name(record["model"], prompt, by_prompt)})
+    return tagged
+
+
 def scored_runs(run_dir, runs, labels):
     scored = []
     for run in runs:
         scorer = SCORERS[run["task"]]
-        output = read_json(output_path(run_dir, run["model"], run["case"], run["repeat"], run["task"]))
+        output = read_json(output_path(run_dir, run["model"], run["case"], run["repeat"], run["task"], run["prompt"]))
         prediction = scorer.empty_prediction if output["prediction"] is None else output["prediction"]
         expected = labels[run["case"]][run["task"]]
         scored.append({**run, "counts": scorer.score(prediction, expected), "items": scorer.items(prediction, expected)})
@@ -127,33 +156,39 @@ def usage_metrics(runs, calls, price):
 USAGE_METRICS = list(usage_metrics([], [], None))
 
 
+def series_fields(runs):
+    first = runs[0]
+    return {"series": first["series"], "model": first["model"], "prompt": first["prompt"]}
+
+
 def summary_rows(scored, calls, prices):
-    calls_by_group = group(calls, "model", "task", "case")
+    calls_by_group = group(calls, "series", "task", "case")
     rows = []
-    for (model, task, case), runs in sorted(group(scored, "model", "task", "case").items()):
-        rows.append({"model": model, "task": task, "case": case,
+    for (series, task, case), runs in sorted(group(scored, "series", "task", "case").items()):
+        rows.append({**series_fields(runs), "task": task, "case": case,
                      **accuracy_metrics(task, runs),
-                     **usage_metrics(runs, calls_by_group.get((model, task, case), []), prices.get(model))})
-    for (model, task), runs in sorted(group(scored, "model", "task").items()):
-        task_calls = [call for call in calls if call["model"] == model and call["task"] == task]
-        rows.append({"model": model, "task": task, "case": ALL_CASES,
+                     **usage_metrics(runs, calls_by_group.get((series, task, case), []), prices.get(runs[0]["model"]))})
+    for (series, task), runs in sorted(group(scored, "series", "task").items()):
+        task_calls = [call for call in calls if call["series"] == series and call["task"] == task]
+        rows.append({**series_fields(runs), "task": task, "case": ALL_CASES,
                      **accuracy_metrics(task, runs),
-                     **usage_metrics(runs, task_calls, prices.get(model))})
+                     **usage_metrics(runs, task_calls, prices.get(runs[0]["model"]))})
     return rows
 
 
-def model_totals(calls, prices):
-    return [
-        {
-            "model": model,
-            "calls": len(model_calls),
-            "failed_calls": sum(call["status"] != OK_STATUS for call in model_calls),
-            "total_cost": total(call_cost(call, prices.get(model)) for call in model_calls),
-            "uncached_total_cost": total(uncached_call_cost(call, prices.get(model)) for call in model_calls),
-            "llm_seconds": sum(call["wall_seconds"] for call in model_calls),
-        }
-        for (model,), model_calls in sorted(group(calls, "model").items())
-    ]
+def series_totals(calls, prices):
+    totals = []
+    for (series,), series_calls in sorted(group(calls, "series").items()):
+        price = prices.get(series_calls[0]["model"])
+        totals.append({
+            **series_fields(series_calls),
+            "calls": len(series_calls),
+            "failed_calls": sum(call["status"] != OK_STATUS for call in series_calls),
+            "total_cost": total(call_cost(call, price) for call in series_calls),
+            "uncached_total_cost": total(uncached_call_cost(call, price) for call in series_calls),
+            "llm_seconds": sum(call["wall_seconds"] for call in series_calls),
+        })
+    return totals
 
 
 def format_value(metric, value):
@@ -180,16 +215,24 @@ def table(header, rows):
 
 def primary_metric_cell(rows_by_case, row, case):
     metric = SCORERS[row["task"]].primary_metric
-    case_row = rows_by_case.get((row["model"], row["task"], case))
+    case_row = rows_by_case.get((row["series"], row["task"], case))
     return format_value(metric, case_row[metric]) if case_row else "-"
+
+
+def prompts_line(matrix):
+    prompts = matrix.get("prompts") or {}
+    return "Prompts: " + "; ".join(f"{task}: {', '.join(names)}" for task, names in prompts.items())
 
 
 def render_markdown(run_name, matrix, rows, totals):
     overall = [row for row in rows if row["case"] == ALL_CASES]
+    by_prompt = compares_prompts(matrix)
+    series_header = "model · prompt" if by_prompt else "model"
     lines = [
         f"# Eval summary: {run_name}",
         "",
         f"Models: {', '.join(matrix['models'])} · Cases: {', '.join(matrix['cases'])} · Repeats: {matrix['repeats']}",
+        *([prompts_line(matrix)] if by_prompt else []),
         "",
         "Failed runs count as empty predictions. Consistency is the share of repeats that agree with the majority "
         "answer per labeled item. Costs use `evals/pricing.yaml`; n/a means a price is missing.",
@@ -202,30 +245,30 @@ def render_markdown(run_name, matrix, rows, totals):
             continue
         metrics = [*SCORERS[task].metrics({}), "consistency"]
         lines += ["", f"### {task}", "", *table(
-            ["model", *metrics],
-            [[row["model"], *(format_value(metric, row[metric]) for metric in metrics)] for row in task_rows],
+            [series_header, *metrics],
+            [[row["series"], *(format_value(metric, row[metric]) for metric in metrics)] for row in task_rows],
         )]
 
     cases = sorted({row["case"] for row in rows} - {ALL_CASES})
-    rows_by_case = {(row["model"], row["task"], row["case"]): row for row in rows}
+    rows_by_case = {(row["series"], row["task"], row["case"]): row for row in rows}
     lines += ["", "## Primary metric per case", "", *table(
-        ["model", "task", "metric", *cases],
+        [series_header, "task", "metric", *cases],
         [
-            [row["model"], row["task"], SCORERS[row["task"]].primary_metric,
+            [row["series"], row["task"], SCORERS[row["task"]].primary_metric,
              *(primary_metric_cell(rows_by_case, row, case) for case in cases)]
             for row in overall
         ],
     )]
 
     lines += ["", "## Cost, tokens and latency per run", "", *table(
-        ["model", "task", *USAGE_METRICS],
-        [[row["model"], row["task"], *(format_value(metric, row[metric]) for metric in USAGE_METRICS)] for row in overall],
+        [series_header, "task", *USAGE_METRICS],
+        [[row["series"], row["task"], *(format_value(metric, row[metric]) for metric in USAGE_METRICS)] for row in overall],
     )]
 
     total_metrics = ["calls", "failed_calls", "total_cost", "uncached_total_cost", "llm_seconds"]
-    lines += ["", "## Totals per model", "", *table(
-        ["model", *total_metrics],
-        [[row["model"], *(format_value(metric, row[metric]) for metric in total_metrics)] for row in totals],
+    lines += ["", f"## Totals per {series_header}", "", *table(
+        [series_header, *total_metrics],
+        [[row["series"], *(format_value(metric, row[metric]) for metric in total_metrics)] for row in totals],
     ), ""]
     return "\n".join(lines)
 
@@ -233,7 +276,12 @@ def render_markdown(run_name, matrix, rows, totals):
 def benchmark_data(run_name, matrix, pricing, rows, totals):
     return {
         "run": run_name,
-        "matrix": {key: matrix[key] for key in ("models", "cases", "repeats", "tasks")},
+        "matrix": {
+            **{key: matrix[key] for key in ("models", "cases", "repeats", "tasks")},
+            "prompts": matrix.get("prompts") or {},
+            "compares_prompts": compares_prompts(matrix),
+            "series": matrix_series(matrix),
+        },
         "metadata": matrix.get("metadata", {}),
         "pricing": {
             "checked_on": str(pricing.get("checked_on", "")),
@@ -275,8 +323,9 @@ def write_csv(path, rows):
 
 def write_summary(run_dir, expected_root=EXPECTED_ROOT, resources_root=RESOURCES_ROOT, pricing_path=PRICING_PATH):
     matrix = read_json(run_dir / "matrix.json")
-    runs = read_jsonl(run_dir / "runs.jsonl")
-    calls = read_jsonl(run_dir / "calls.jsonl")
+    by_prompt = compares_prompts(matrix)
+    runs = with_series(read_jsonl(run_dir / "runs.jsonl"), by_prompt)
+    calls = with_series(read_jsonl(run_dir / "calls.jsonl"), by_prompt)
     labels = {
         case.name: case.load_labels().model_dump()
         for case in find_cases(expected_root, resources_root, matrix["cases"])
@@ -284,7 +333,7 @@ def write_summary(run_dir, expected_root=EXPECTED_ROOT, resources_root=RESOURCES
     pricing = load_pricing(pricing_path)
     prices = pricing["usd_per_million_tokens"]
     rows = summary_rows(scored_runs(run_dir, runs, labels), calls, prices)
-    totals = model_totals(calls, prices)
+    totals = series_totals(calls, prices)
     summary_path = run_dir / "summary.md"
     summary_path.write_text(render_markdown(run_dir.name, matrix, rows, totals), encoding="utf-8")
     write_csv(run_dir / "summary.csv", rows)
