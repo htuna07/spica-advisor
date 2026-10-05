@@ -5,13 +5,13 @@ from typing import Any, Self
 
 from spica_advisor.log import LOGGER
 from spica_advisor.markdown import Section
-from spica_advisor.runners import LLMRunner
+from spica_advisor.runner import AgentRunner
 
 
 @dataclass
 class InvestigationContext:
     project_dir: Path
-    runner: LLMRunner
+    runner: AgentRunner
     report: Any = None
 
 

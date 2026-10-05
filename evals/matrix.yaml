@@ -3,8 +3,6 @@ models:
   - gpt-6.1-sol
   - claude-haiku-4-5
   - claude-sonnet-5-5
-  - claude-cli-sonnet-5-5
-  - claude-cli-opus-5-5
 cases: all
 repeats: 3
 tasks: all
