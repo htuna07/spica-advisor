@@ -45,3 +45,14 @@ runs, and closed when a complete run finds nothing. Set `issue: false` to skip i
 | `openai-api-key` | | Required for OpenAI models |
 | `anthropic-api-key` | | Required for Claude models |
 | `github-token` | `github.token` | Token used to manage the issue |
+
+## Claude Code subscription
+
+Profiles named `claude-cli-*` call the Claude Code CLI instead of an API, so they use the signed-in Claude
+subscription. They need `claude` on `PATH`, signed in with `claude auth login` or `CLAUDE_CODE_OAUTH_TOKEN`
+from `claude setup-token`. `ANTHROPIC_API_KEY` is removed from the CLI's environment so it never bills the API.
+The Docker action does not include the CLI yet.
+
+```
+python main.py --model claude-cli-sonnet-5-5 --project-dir path/to/spica-project
+```

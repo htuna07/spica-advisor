@@ -10,7 +10,7 @@ from spica_advisor.markdown import render_report
 from spica_advisor.metrics import totals
 from spica_advisor.model_profiles import DEFAULT_MODEL, MODEL_PROFILES
 from spica_advisor.report import write_markdown, write_report
-from spica_advisor.runner import AgentRunner
+from spica_advisor.runners import create_runner
 
 
 def existing_dir(value):
@@ -137,7 +137,7 @@ def run():
     args = parse_args()
     configure_logging(args.debug, args.log_file, args.log_format)
     try:
-        runner = AgentRunner.from_env(MODEL_PROFILES[args.model])
+        runner = create_runner(MODEL_PROFILES[args.model])
         summary_path = step_summary_path() if args.github_summary else None
         issues = GitHubIssues.from_env() if args.github_issue else None
     except Exception:

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 from agents import ModelSettings
@@ -10,13 +10,17 @@ from spica_advisor.anthropic_model import AnthropicModel
 @dataclass(frozen=True)
 class ModelProfile:
     name: str
-    provider: Literal["openai", "anthropic"]
+    provider: Literal["openai", "anthropic", "claude-cli"]
     model_id: str
-    settings: ModelSettings
+    settings: ModelSettings = field(default_factory=ModelSettings)
 
     @property
     def is_openai(self):
         return self.provider == "openai"
+
+    @property
+    def is_claude_cli(self):
+        return self.provider == "claude-cli"
 
     @property
     def uses_responses_api(self):
@@ -54,6 +58,16 @@ MODEL_PROFILES = {
             provider="anthropic",
             model_id="claude-sonnet-5-5",
             settings=ModelSettings(max_tokens=16000),
+        ),
+        ModelProfile(
+            name="claude-cli-sonnet-5-5",
+            provider="claude-cli",
+            model_id="claude-sonnet-5-5",
+        ),
+        ModelProfile(
+            name="claude-cli-opus-5-5",
+            provider="claude-cli",
+            model_id="claude-opus-5-5",
         ),
     )
 }
