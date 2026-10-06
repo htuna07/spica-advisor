@@ -24,7 +24,7 @@ from evals.validation import check_case
 from spica_advisor.log import LOGGER, configure_logging
 from spica_advisor.metrics import OK_STATUS, CallRecord
 from spica_advisor.model_profiles import MODEL_PROFILES
-from spica_advisor.runners import create_runner
+from spica_advisor.runner import AgentRunner
 
 
 MATRIX_PATH = Path("evals/matrix.yaml")
@@ -215,7 +215,7 @@ def run_metadata(matrix, variants):
     }
 
 
-def run_matrix(matrix, run_dir, cases, create_runner=create_runner, prompts_root=PROMPTS_ROOT,
+def run_matrix(matrix, run_dir, cases, create_runner=AgentRunner.from_env, prompts_root=PROMPTS_ROOT,
                workers=DEFAULT_WORKERS, executor_class=ProcessPoolExecutor):
     variants = {task: load_variants(task, prompts_root) for task in matrix.tasks}
     write_json(run_dir / "matrix.json", {**asdict(matrix), "metadata": run_metadata(matrix, variants)})
