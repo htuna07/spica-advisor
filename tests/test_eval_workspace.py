@@ -144,29 +144,29 @@ def test_cases_page_embeds_models_defaults_and_costs(tmp_path):
     template = tmp_path / "template.html"
     template.write_text("<script>__CASES_PAGE_DATA__</script>")
     matrix = tmp_path / "matrix.yaml"
-    matrix.write_text("models: [gpt-6-luna]\ncases: all\nrepeats: 2\ntasks: all\n")
+    matrix.write_text("models: [claude-sonnet-5-5]\ncases: all\nrepeats: 2\ntasks: all\n")
     results = {"run": "r1", "rows": [
-        {"model": "gpt-6-luna", "task": "bucket_acl", "case": "c1", "cost_per_run": 0.5},
-        {"model": "gpt-6-luna", "task": "bucket_acl", "case": "all", "cost_per_run": 0.5},
+        {"model": "claude-sonnet-5-5", "task": "bucket_acl", "case": "c1", "cost_per_run": 0.5},
+        {"model": "claude-sonnet-5-5", "task": "bucket_acl", "case": "all", "cost_per_run": 0.5},
     ]}
 
     data = cases_page_data(results, matrix)
 
-    assert data["default_models"] == ["gpt-6-luna"] and data["default_repeats"] == 2
-    assert data["costs"] == {"gpt-6-luna|bucket_acl|c1": 0.5}
-    assert "claude-sonnet-5-5" in data["models"]
+    assert data["default_models"] == ["claude-sonnet-5-5"] and data["default_repeats"] == 2
+    assert data["costs"] == {"claude-sonnet-5-5|bucket_acl|c1": 0.5}
+    assert data["models"] == ["claude-sonnet-5-5"]
     assert render_cases_page(results, template).startswith("<script>{")
 
 
 def test_cases_page_lists_prompt_variants_and_keeps_baseline_costs(tmp_path):
     matrix = tmp_path / "matrix.yaml"
-    matrix.write_text("models: [gpt-6-luna]\ncases: all\nrepeats: 1\ntasks: all\n")
+    matrix.write_text("models: [claude-sonnet-5-5]\ncases: all\nrepeats: 1\ntasks: all\n")
     prompts = tmp_path / "prompts" / "unauthenticated_endpoints"
     prompts.mkdir(parents=True)
     (prompts / "strict.yaml").write_text("description: Stricter.\ninput: source-only\ninstructions: x\n")
     results = {"run": "r1", "rows": [
-        {"model": "gpt-6-luna", "prompt": "baseline", "task": "unauthenticated_endpoints", "case": "c1", "cost_per_run": 0.5},
-        {"model": "gpt-6-luna", "prompt": "strict", "task": "unauthenticated_endpoints", "case": "c1", "cost_per_run": 0.9},
+        {"model": "claude-sonnet-5-5", "prompt": "baseline", "task": "unauthenticated_endpoints", "case": "c1", "cost_per_run": 0.5},
+        {"model": "claude-sonnet-5-5", "prompt": "strict", "task": "unauthenticated_endpoints", "case": "c1", "cost_per_run": 0.9},
     ]}
 
     data = cases_page_data(results, matrix, tmp_path / "prompts")
@@ -178,4 +178,4 @@ def test_cases_page_lists_prompt_variants_and_keeps_baseline_costs(tmp_path):
     assert data["prompts"]["bucket_acl"] == [
         {"name": "baseline", "description": "The prompt the advisor ships with.", "input": "default"},
     ]
-    assert data["costs"] == {"gpt-6-luna|unauthenticated_endpoints|c1": 0.5}
+    assert data["costs"] == {"claude-sonnet-5-5|unauthenticated_endpoints|c1": 0.5}

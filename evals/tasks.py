@@ -1,9 +1,8 @@
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from agents import Agent
-
 from evals.inputs import endpoint_prompts_without_handler_names
+from spica_advisor.agent import Agent
 from spica_advisor.investigations.broken_access_control.agents import BUCKET_ACL_AGENT, POLICY_ATTACHMENT_AGENT
 from spica_advisor.investigations.broken_access_control.context import BrokenAccessControlContext
 from spica_advisor.investigations.broken_access_control.prompts import bucket_acl_input

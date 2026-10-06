@@ -12,9 +12,8 @@ When you identified this kind of policy attachment, follow the references to det
 Definition could come from other spica functions, and imports at the top of the file with @spica-fn/<fn-name> format.
 They could be \"process.env.<ENVIRONMENT_NAME>\", put name of them to the result if so, 
 and also they could be hardcoded \"POLICY_ID\", put id of them to the result if so. 
-Use tools to perform searching.
-Search with short single-line patterns such as identifiers or call names; each result already
-includes 3 lines of surrounding code, so avoid (?s) and long [\\s\\S] or .{0,N} windows.
+Use the Grep, Glob and Read tools to search the function files.
+Search with short single-line patterns such as identifiers or call names.
 Do not search again for code that a previous result already returned.
 Return attachment object including function id and matched code where the policy was attached,
 definition object including function id and matched code where the policy was defined,

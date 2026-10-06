@@ -1,12 +1,18 @@
 name: Spica Advisor
-description: Find security issues in Spica resources and report them in the job summary and a single GitHub issue.
+description: Find security issues in Spica resources with Claude Code and report them in the job summary and a single GitHub issue.
 branding:
   icon: shield
   color: blue
 
 inputs:
+  claude-code-oauth-token:
+    description: Claude Code token from `claude setup-token`, so runs use the Claude subscription.
+    required: true
   model:
-    description: Model profile to run. Uses the default profile when empty.
+    description: Claude model to run. Uses claude-sonnet-5-5 when empty.
+    default: ""
+  effort:
+    description: Claude Code effort level (low, medium, high, xhigh, max). Uses Claude Code's default when empty.
     default: ""
   project-dir:
     description: Directory holding the Spica resources, relative to the repository root.
@@ -20,12 +26,6 @@ inputs:
   issue:
     description: Keep the report in a single issue labeled spica-advisor.
     default: "true"
-  openai-api-key:
-    description: OpenAI API key, required for OpenAI models.
-    default: ""
-  anthropic-api-key:
-    description: Anthropic API key, required for Claude models.
-    default: ""
   github-token:
     description: Token used to manage the report issue. Needs the issues write permission.
     default: ${{ github.token }}
@@ -34,8 +34,6 @@ runs:
   using: docker
   image: Dockerfile
   args:
-    - --model
-    - ${{ inputs.model }}
     - --project-dir
     - ${{ inputs.project-dir }}
     - --output-dir
@@ -45,6 +43,7 @@ runs:
     - --github-summary
     - ${{ inputs.issue == 'true' && '--github-issue' || '--no-github-issue' }}
   env:
-    OPENAI_API_KEY: ${{ inputs.openai-api-key }}
-    ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+    CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.claude-code-oauth-token }}
+    SPICA_ADVISOR_MODEL: ${{ inputs.model }}
+    SPICA_ADVISOR_EFFORT: ${{ inputs.effort }}
     GITHUB_TOKEN: ${{ inputs.github-token }}

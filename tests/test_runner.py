@@ -1,193 +1,223 @@
+import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from agents import Agent, MaxTurnsExceeded, ModelSettings, Runner, ToolCallItem, Usage
-from openai.types.responses.response_usage import InputTokensDetails, OutputTokensDetails
+from pydantic import BaseModel, ValidationError
 
-from spica_advisor.anthropic_model import AnthropicModel
-from spica_advisor.metrics import CallRecord, totals
-from spica_advisor.model_profiles import MODEL_PROFILES, ModelProfile
-from spica_advisor.runner import OPENAI_MAX_RETRIES, AgentRunner
+from spica_advisor import runner as runner_module
+from spica_advisor.agent import Agent
+from spica_advisor.runner import DEFAULT_MODEL, MAX_TURNS, ClaudeError, ClaudeRunner
 
 
-AGENT = Agent(name="Test agent")
-OPENAI_PROFILE = ModelProfile("openai-test", "openai", "gpt-test", ModelSettings())
-ANTHROPIC_PROFILE = ModelProfile("anthropic-test", "anthropic", "claude-test", ModelSettings())
+class Answer(BaseModel):
+    label: str
 
 
-def usage(requests=2, input_tokens=100, cached=40, cache_write=10, output_tokens=30, reasoning=5):
-    return Usage(
-        requests=requests,
-        input_tokens=input_tokens,
-        input_tokens_details=InputTokensDetails(cached_tokens=cached, cache_write_tokens=cache_write),
-        output_tokens=output_tokens,
-        output_tokens_details=OutputTokensDetails(reasoning_tokens=reasoning),
-        total_tokens=input_tokens + output_tokens,
-    )
+AGENT = Agent(name="Classifier", instructions="Classify.", output_type=Answer)
+FUNCTIONS = [{"_id": "fn/1", "name": "Orders", "content": "export const a = 1;"}]
 
 
-def tool_call():
-    return ToolCallItem(agent=AGENT, raw_item={})
+def assistant(*blocks):
+    return {"type": "assistant", "message": {"content": list(blocks)}}
 
 
-def run_progress(run_usage, items):
-    return SimpleNamespace(context_wrapper=SimpleNamespace(usage=run_usage), new_items=items)
+def tool_use(name):
+    return {"type": "tool_use", "name": name, "input": {}}
 
 
-class FakeRunSync:
-    def __init__(self, result=None, error=None):
-        self.result = result
-        self.error = error
-        self.kwargs = None
-
-    def __call__(self, agent, prompt, **kwargs):
-        self.kwargs = kwargs
-        if self.error:
-            raise self.error
-        return self.result
-
-
-@pytest.fixture
-def fake_anthropic_model(monkeypatch):
-    monkeypatch.setattr(ModelProfile, "build_model", lambda profile: f"built:{profile.model_id}")
-
-
-def test_run_returns_final_output_and_records_usage(monkeypatch):
-    result = SimpleNamespace(final_output="done", **vars(run_progress(usage(), [tool_call(), tool_call()])))
-    monkeypatch.setattr(Runner, "run_sync", FakeRunSync(result=result))
-    runner = AgentRunner(OPENAI_PROFILE)
-
-    assert runner.run(AGENT, "prompt") == "done"
-
-    [call] = runner.calls
-    assert call.agent == "Test agent"
-    assert call.model == "openai-test"
-    assert call.status == "ok"
-    assert call.wall_seconds >= 0
-    assert (call.requests, call.tool_calls) == (2, 2)
-    assert (call.input_tokens, call.cached_input_tokens, call.cache_write_tokens) == (100, 40, 10)
-    assert (call.output_tokens, call.reasoning_tokens) == (30, 5)
-
-
-def test_failed_run_records_usage_spent_before_failure_and_reraises(monkeypatch):
-    error = MaxTurnsExceeded("too many turns")
-    error.run_data = run_progress(usage(requests=10), [tool_call()])
-    monkeypatch.setattr(Runner, "run_sync", FakeRunSync(error=error))
-    runner = AgentRunner(OPENAI_PROFILE)
-
-    with pytest.raises(MaxTurnsExceeded):
-        runner.run(AGENT, "prompt")
-
-    [call] = runner.calls
-    assert call.status == "MaxTurnsExceeded"
-    assert (call.requests, call.tool_calls, call.input_tokens) == (10, 1, 100)
-
-
-def test_failed_run_without_progress_records_zero_usage(monkeypatch):
-    monkeypatch.setattr(Runner, "run_sync", FakeRunSync(error=ConnectionError("offline")))
-    runner = AgentRunner(OPENAI_PROFILE)
-
-    with pytest.raises(ConnectionError):
-        runner.run(AGENT, "prompt")
-
-    [call] = runner.calls
-    assert call.status == "ConnectionError"
-    assert (call.requests, call.input_tokens, call.output_tokens) == (0, 0, 0)
-
-
-@pytest.mark.parametrize(
-    ("profile", "uses_previous_response_id"),
-    [(OPENAI_PROFILE, True), (ANTHROPIC_PROFILE, False)],
-)
-def test_previous_response_id_is_only_used_with_responses_api(
-    monkeypatch, fake_anthropic_model, profile, uses_previous_response_id
-):
-    result = SimpleNamespace(final_output="done", **vars(run_progress(usage(), [])))
-    run_sync = FakeRunSync(result=result)
-    monkeypatch.setattr(Runner, "run_sync", run_sync)
-
-    AgentRunner(profile).run(AGENT, "prompt")
-
-    assert run_sync.kwargs["auto_previous_response_id"] is uses_previous_response_id
-
-
-def test_openai_profile_builds_model_name():
-    assert OPENAI_PROFILE.build_model() == "gpt-test"
-
-
-def test_anthropic_profile_builds_native_anthropic_model(monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-
-    model = ANTHROPIC_PROFILE.build_model()
-
-    assert isinstance(model, AnthropicModel)
-    assert model.model == "claude-test"
-
-
-@pytest.fixture
-def no_dotenv(monkeypatch):
-    monkeypatch.setattr("spica_advisor.runner.load_dotenv", lambda: None)
-
-
-def test_anthropic_runner_needs_no_openai_key(monkeypatch, fake_anthropic_model, no_dotenv):
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("SPICA_ADVISOR_TRACING", raising=False)
-
-    runner = AgentRunner.from_env(ANTHROPIC_PROFILE)
-
-    assert runner.run_config.tracing_disabled
-
-
-@pytest.mark.parametrize("profile", [OPENAI_PROFILE, ANTHROPIC_PROFILE])
-def test_tracing_is_enabled_by_env_var(monkeypatch, fake_anthropic_model, no_dotenv, profile):
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    monkeypatch.setenv("SPICA_ADVISOR_TRACING", "true")
-
-    assert not AgentRunner.from_env(profile).run_config.tracing_disabled
-
-
-def test_tracing_requires_openai_key(monkeypatch, fake_anthropic_model, no_dotenv):
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setenv("SPICA_ADVISOR_TRACING", "1")
-
-    with pytest.raises(ValueError, match="requires OPENAI_API_KEY"):
-        AgentRunner.from_env(ANTHROPIC_PROFILE)
-
-
-def test_tracing_is_off_by_default():
-    assert AgentRunner(OPENAI_PROFILE).run_config.tracing_disabled
-
-
-def test_registered_profiles_are_keyed_by_name():
-    assert all(name == profile.name for name, profile in MODEL_PROFILES.items())
-
-
-def test_totals_sum_calls_and_count_failures():
-    calls = [
-        CallRecord.from_run("a", "m", "ok", 1.25, usage(), [tool_call()]),
-        CallRecord.from_run("b", "m", "MaxTurnsExceeded", 2.5, usage(requests=1), []),
-    ]
-
-    assert totals(calls) == {
-        "calls": 2,
-        "failed_calls": 1,
-        "wall_seconds": 3.75,
-        "requests": 3,
-        "tool_calls": 1,
-        "input_tokens": 200,
-        "cached_input_tokens": 80,
-        "cache_write_tokens": 20,
-        "output_tokens": 60,
-        "reasoning_tokens": 10,
+def result(structured_output=None, is_error=False, subtype="success", **extra):
+    return {
+        "type": "result",
+        "subtype": subtype,
+        "is_error": is_error,
+        "num_turns": 3,
+        "total_cost_usd": 0.0125,
+        "structured_output": structured_output,
+        "modelUsage": {
+            "claude-test": {"inputTokens": 5, "outputTokens": 40, "cacheReadInputTokens": 100,
+                            "cacheCreationInputTokens": 20, "thinkingTokens": 7},
+            "claude-helper": {"inputTokens": 1, "outputTokens": 2},
+        },
+        **extra,
     }
 
 
-def test_openai_client_retries_rate_limits(monkeypatch, no_dotenv):
-    clients = []
-    monkeypatch.setattr("spica_advisor.runner.set_default_openai_client", clients.append)
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+def stream(*events):
+    return "\n".join(json.dumps(event) for event in events) + "\n"
 
-    AgentRunner.from_env(OPENAI_PROFILE)
 
-    [client] = clients
-    assert client.max_retries == OPENAI_MAX_RETRIES
+class FakeSubprocess:
+    def __init__(self, stdout="", stderr="", error=None):
+        self.stdout = stdout
+        self.stderr = stderr
+        self.error = error
+        self.command = None
+        self.kwargs = None
+        self.workspace_files = {}
+
+    def __call__(self, command, **kwargs):
+        self.command = command
+        self.kwargs = kwargs
+        self.workspace_files = {path.name: path.read_text() for path in Path(kwargs["cwd"]).iterdir()}
+        if self.error:
+            raise self.error
+        return SimpleNamespace(stdout=self.stdout, stderr=self.stderr, returncode=0)
+
+
+@pytest.fixture
+def fake_subprocess(monkeypatch):
+    def install(**kwargs):
+        fake = FakeSubprocess(**kwargs)
+        monkeypatch.setattr(runner_module.subprocess, "run", fake)
+        return fake
+    return install
+
+
+@pytest.fixture
+def cli_installed(monkeypatch):
+    monkeypatch.setattr(runner_module.shutil, "which", lambda name: "/usr/bin/claude")
+    monkeypatch.setattr(runner_module, "load_dotenv", lambda: None)
+
+
+def flag(command, name):
+    return command[command.index(name) + 1]
+
+
+def test_run_returns_validated_output_and_records_usage(fake_subprocess):
+    fake = fake_subprocess(stdout=stream(
+        {"type": "system", "subtype": "init"},
+        assistant(tool_use("Grep"), tool_use("Read")),
+        assistant(tool_use("StructuredOutput")),
+        result({"label": "pos"}),
+    ))
+    runner = ClaudeRunner("claude-test")
+
+    assert runner.run(AGENT, "I love it") == Answer(label="pos")
+
+    [call] = runner.calls
+    assert (call.agent, call.model, call.status) == ("Classifier", "claude-test", "ok")
+    assert (call.requests, call.tool_calls) == (3, 2)
+    assert (call.input_tokens, call.cached_input_tokens, call.cache_write_tokens) == (126, 100, 20)
+    assert (call.output_tokens, call.reasoning_tokens, call.cost_usd) == (42, 7, 0.0125)
+    assert fake.kwargs["input"] == "I love it"
+
+
+def test_command_passes_agent_instructions_schema_model_and_turn_limit(fake_subprocess):
+    fake = fake_subprocess(stdout=stream(result({"label": "pos"})))
+
+    ClaudeRunner("claude-test").run(AGENT, "prompt")
+
+    command = fake.command
+    assert command[:2] == ["claude", "-p"]
+    assert {"--safe-mode", "--restricted", "--no-session-persistence"} <= set(command)
+    assert flag(command, "--system-prompt") == "Classify."
+    assert json.loads(flag(command, "--json-schema")) == Answer.model_json_schema()
+    assert flag(command, "--model") == "claude-test"
+    assert flag(command, "--max-turns") == str(MAX_TURNS)
+    assert flag(command, "--tools") == ""
+    assert "--effort" not in command
+    assert fake.workspace_files == {}
+
+
+def test_effort_is_passed_when_set(fake_subprocess):
+    fake = fake_subprocess(stdout=stream(result({"label": "pos"})))
+
+    ClaudeRunner("claude-test", "high").run(AGENT, "prompt")
+
+    assert flag(fake.command, "--effort") == "high"
+
+
+def test_unknown_effort_is_rejected():
+    with pytest.raises(ValueError, match="Unknown effort"):
+        ClaudeRunner("claude-test", "extreme")
+
+
+def test_api_key_is_removed_so_claude_uses_the_subscription(fake_subprocess, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "paid-key")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "subscription-token")
+    fake = fake_subprocess(stdout=stream(result({"label": "pos"})))
+
+    ClaudeRunner().run(AGENT, "prompt")
+
+    assert "ANTHROPIC_API_KEY" not in fake.kwargs["env"]
+    assert fake.kwargs["env"]["CLAUDE_CODE_OAUTH_TOKEN"] == "subscription-token"
+
+
+def test_functions_are_searched_as_files_with_file_tools(fake_subprocess):
+    fake = fake_subprocess(stdout=stream(result({"label": "pos"})))
+
+    ClaudeRunner().run(AGENT, "Search the functions.", functions=FUNCTIONS)
+
+    assert flag(fake.command, "--tools") == "Grep,Glob,Read"
+    assert fake.workspace_files == {"fn_1.js": "export const a = 1;"}
+    assert fake.kwargs["input"].startswith("Search the functions.\n\n")
+    assert "- fn_1.js: function_id fn/1, name Orders" in fake.kwargs["input"]
+
+
+def test_error_result_raises_and_records_usage(fake_subprocess):
+    fake_subprocess(stdout=stream(result(is_error=True, subtype="error_max_turns", errors=["Reached max turns"])))
+    runner = ClaudeRunner()
+
+    with pytest.raises(ClaudeError, match="error_max_turns"):
+        runner.run(AGENT, "prompt")
+
+    [call] = runner.calls
+    assert call.status == "ClaudeError"
+    assert (call.requests, call.input_tokens) == (3, 126)
+
+
+def test_missing_result_raises_with_stderr(fake_subprocess):
+    fake_subprocess(stdout="not json\n", stderr="Not logged in")
+    runner = ClaudeRunner()
+
+    with pytest.raises(ClaudeError, match="Not logged in"):
+        runner.run(AGENT, "prompt")
+
+    [call] = runner.calls
+    assert (call.status, call.requests, call.input_tokens, call.cost_usd) == ("ClaudeError", 0, 0, None)
+
+
+def test_output_that_breaks_the_schema_raises(fake_subprocess):
+    fake_subprocess(stdout=stream(result({"wrong": "field"})))
+    runner = ClaudeRunner()
+
+    with pytest.raises(ValidationError):
+        runner.run(AGENT, "prompt")
+
+    assert runner.calls[0].status == "ValidationError"
+
+
+def test_timeout_is_recorded_and_reraised(fake_subprocess):
+    fake_subprocess(error=TimeoutError("timed out"))
+    runner = ClaudeRunner()
+
+    with pytest.raises(TimeoutError):
+        runner.run(AGENT, "prompt")
+
+    assert runner.calls[0].status == "TimeoutError"
+
+
+def test_create_requires_the_cli(monkeypatch):
+    monkeypatch.setattr(runner_module.shutil, "which", lambda name: None)
+
+    with pytest.raises(RuntimeError, match="Claude Code"):
+        ClaudeRunner.create()
+
+
+def test_from_env_reads_model_and_effort(monkeypatch, cli_installed):
+    monkeypatch.setenv("SPICA_ADVISOR_MODEL", "claude-opus-5-5")
+    monkeypatch.setenv("SPICA_ADVISOR_EFFORT", "max")
+
+    runner = ClaudeRunner.from_env()
+
+    assert (runner.model, runner.effort) == ("claude-opus-5-5", "max")
+
+
+def test_from_env_defaults_when_unset_or_empty(monkeypatch, cli_installed):
+    monkeypatch.setenv("SPICA_ADVISOR_MODEL", " ")
+    monkeypatch.delenv("SPICA_ADVISOR_EFFORT", raising=False)
+
+    runner = ClaudeRunner.from_env()
+
+    assert (runner.model, runner.effort) == (DEFAULT_MODEL, None)

@@ -12,7 +12,6 @@ from evals.prompts import PROMPTS_ROOT, all_variants
 from evals.tasks import TASKS
 from evals.validation import IGNORED_DIRS, SCANNED_SUFFIXES
 from spica_advisor.investigations.unauthenticated_endpoints.handlers import public_handler_names
-from spica_advisor.model_profiles import MODEL_PROFILES
 from spica_advisor.resources import load_buckets, load_env_vars, load_functions, load_policies
 
 
@@ -174,7 +173,7 @@ def page_prompts(prompts_root):
 def cases_page_data(results, matrix_path=MATRIX_PATH, prompts_root=PROMPTS_ROOT):
     defaults = yaml.safe_load(matrix_path.read_text(encoding="utf-8"))
     return {
-        "models": list(MODEL_PROFILES),
+        "models": defaults["models"],
         "prompts": page_prompts(prompts_root),
         "default_models": defaults["models"],
         "default_repeats": defaults["repeats"],

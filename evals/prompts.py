@@ -1,6 +1,7 @@
 import difflib
 import hashlib
 import re
+from dataclasses import replace
 from pathlib import Path
 
 import yaml
@@ -27,7 +28,7 @@ class PromptVariant(BaseModel):
         return self.instructions if self.instructions is not None else agent.instructions
 
     def agent_for(self, agent):
-        return agent if self.instructions is None else agent.clone(instructions=self.instructions)
+        return agent if self.instructions is None else replace(agent, instructions=self.instructions)
 
 
 BASELINE_VARIANT = PromptVariant(name=BASELINE, description=BASELINE_DESCRIPTION)

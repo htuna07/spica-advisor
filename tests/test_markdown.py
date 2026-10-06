@@ -35,7 +35,7 @@ ACCESS_REPORT = [
     ]},
 ]
 GITHUB_METADATA = ReportMetadata(
-    model="gpt-6-luna",
+    model="claude-sonnet-5-5",
     commit="a1b2c3d4e5",
     commit_url="https://github.com/o/r/commit/a1b2c3d4e5",
     run_url="https://github.com/o/r/actions/runs/7",
@@ -113,6 +113,14 @@ def test_failed_investigation_is_not_reported_as_clean():
     assert "No findings.\n\n| Investigation" not in report.text
     assert "| Unauthenticated endpoints | ⚠️ Failed | – | – |" in report.text
     assert "This investigation failed" in report.text
+
+
+def test_header_shows_effort_only_when_set():
+    with_effort = render_report([(ENV_SECTION, [])], ReportMetadata(model="m", effort="high"))
+    without_effort = render_report([(ENV_SECTION, [])], ReportMetadata(model="m"))
+
+    assert "Model `m` · Effort `high`" in with_effort.text
+    assert "Effort" not in without_effort.text
 
 
 def test_clean_report_says_so():

@@ -8,9 +8,8 @@ from spica_advisor.investigations import INVESTIGATIONS
 from spica_advisor.log import LOGGER, configure_logging
 from spica_advisor.markdown import render_report
 from spica_advisor.metrics import totals
-from spica_advisor.model_profiles import DEFAULT_MODEL, MODEL_PROFILES
 from spica_advisor.report import write_markdown, write_report
-from spica_advisor.runners import create_runner
+from spica_advisor.runner import ClaudeRunner
 
 
 def existing_dir(value):
@@ -18,10 +17,6 @@ def existing_dir(value):
     if not path.is_dir():
         raise argparse.ArgumentTypeError(f"not a directory: {value}")
     return path
-
-
-def model_name(value):
-    return value.strip() or DEFAULT_MODEL
 
 
 def investigation_names(value):
@@ -46,13 +41,6 @@ def parse_args():
         "--log-format", choices=("text", "json"), default="text")
     parser.add_argument("--project-dir", type=existing_dir, default=Path("."))
     parser.add_argument("--output-dir", type=Path, default=Path("output"))
-    parser.add_argument(
-        "--model",
-        type=model_name,
-        choices=sorted(MODEL_PROFILES),
-        default=DEFAULT_MODEL,
-        help=f"uses {DEFAULT_MODEL} when omitted or empty",
-    )
     parser.add_argument(
         "--investigations",
         type=investigation_names,
@@ -137,7 +125,7 @@ def run():
     args = parse_args()
     configure_logging(args.debug, args.log_file, args.log_format)
     try:
-        runner = create_runner(MODEL_PROFILES[args.model])
+        runner = ClaudeRunner.from_env()
         summary_path = step_summary_path() if args.github_summary else None
         issues = GitHubIssues.from_env() if args.github_issue else None
     except Exception:
@@ -146,7 +134,7 @@ def run():
 
     investigations = selected_investigations(args.investigations)
     reports = run_investigations(investigations, runner, args.project_dir, args.output_dir)
-    metadata = report_metadata(args.model, args.project_dir)
+    metadata = report_metadata(runner.model, args.project_dir, runner.effort)
     report = render_report([(investigation.section, reports.get(investigation.name)) for investigation in investigations],
                            metadata)
     write_markdown(args.output_dir, report.text)

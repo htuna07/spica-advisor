@@ -28,15 +28,16 @@ def source_url(repository_url, sha, project_dir):
     return tree_url if relative == "." else f"{tree_url}/{quote(relative)}"
 
 
-def report_metadata(model, project_dir):
+def report_metadata(model, project_dir, effort=None):
     repository = os.environ.get("GITHUB_REPOSITORY")
     sha = os.environ.get("GITHUB_SHA")
     if not (repository and sha):
-        return ReportMetadata(model=model)
+        return ReportMetadata(model=model, effort=effort)
     repository_url = f"{os.environ.get('GITHUB_SERVER_URL', DEFAULT_SERVER_URL)}/{repository}"
     run_id = os.environ.get("GITHUB_RUN_ID")
     return ReportMetadata(
         model=model,
+        effort=effort,
         commit=sha,
         commit_url=f"{repository_url}/commit/{sha}",
         run_url=f"{repository_url}/actions/runs/{run_id}" if run_id else None,

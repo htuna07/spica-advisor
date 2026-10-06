@@ -4,7 +4,6 @@ from pathlib import Path
 from evals.cases import EXPECTED_ROOT, RESOURCES_ROOT, find_cases
 from evals.harness import (
     DEFAULT_WORKERS,
-    configure_eval_logging,
     new_run_dir,
     resolve_matrix,
     run_matrix,
@@ -15,6 +14,8 @@ from evals.storage import read_json, write_json
 from evals.summary import write_summary
 from evals.validation import check_case
 from evals.workspace import export_cases, import_cases
+from spica_advisor.log import configure_logging
+from spica_advisor.runner import EFFORTS
 
 
 def positive_int(value):
@@ -43,6 +44,7 @@ def parse_args():
     run.add_argument("--cases", nargs="+", metavar="CASE", help="overrides evals/matrix.yaml")
     run.add_argument("--tasks", nargs="+", metavar="TASK", help="overrides evals/matrix.yaml")
     run.add_argument("--repeats", type=int, help="overrides evals/matrix.yaml")
+    run.add_argument("--effort", choices=EFFORTS, help="overrides evals/matrix.yaml; Claude Code's default when unset")
     run.add_argument("--workers", type=positive_int, default=DEFAULT_WORKERS,
                      help=f"agent tasks run at once (default {DEFAULT_WORKERS})")
     run.add_argument("--prompts", nargs="+", type=prompt_selection, metavar="TASK=VARIANT,...",
@@ -81,10 +83,10 @@ def check(names):
 
 
 def run(args):
-    configure_eval_logging()
+    configure_logging(debug=False, log_file=None, log_format="text")
     prompts = dict(args.prompts) if args.prompts else None
     matrix = resolve_matrix(models=args.models, cases=args.cases, repeats=args.repeats, tasks=args.tasks,
-                            prompts=prompts)
+                            prompts=prompts, effort=args.effort)
     cases = validated_cases(matrix.cases)
     run_dir = new_run_dir()
     print(f"Writing results to {run_dir}")

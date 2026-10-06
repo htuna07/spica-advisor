@@ -1,5 +1,5 @@
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from itertools import count
 from datetime import UTC, datetime
@@ -21,10 +21,9 @@ from evals.prompts import (
 from evals.storage import append_jsonl, write_json
 from evals.tasks import TASKS
 from evals.validation import check_case
-from spica_advisor.log import LOGGER, configure_logging
+from spica_advisor.log import LOGGER
 from spica_advisor.metrics import OK_STATUS, CallRecord
-from spica_advisor.model_profiles import MODEL_PROFILES
-from spica_advisor.runners import create_runner
+from spica_advisor.runner import EFFORTS, ClaudeRunner
 
 
 MATRIX_PATH = Path("evals/matrix.yaml")
@@ -40,6 +39,7 @@ class Matrix:
     repeats: int
     tasks: list[str]
     prompts: dict[str, list[str]] = field(default_factory=dict)
+    effort: str | None = None
 
     def prompts_for(self, task):
         return self.prompts.get(task, [BASELINE])
@@ -59,7 +59,7 @@ def prompt_problems(prompts, tasks, prompts_root):
     return problems
 
 
-def resolve_matrix(path=MATRIX_PATH, models=None, cases=None, repeats=None, tasks=None, prompts=None,
+def resolve_matrix(path=MATRIX_PATH, models=None, cases=None, repeats=None, tasks=None, prompts=None, effort=None,
                    prompts_root=PROMPTS_ROOT):
     defaults = yaml.safe_load(path.read_text(encoding="utf-8"))
     matrix = Matrix(
@@ -68,12 +68,14 @@ def resolve_matrix(path=MATRIX_PATH, models=None, cases=None, repeats=None, task
         repeats=repeats or defaults["repeats"],
         tasks=tasks or expand(defaults["tasks"], list(TASKS)),
         prompts=prompts or defaults.get("prompts") or {},
+        effort=effort or defaults.get("effort"),
     )
-    unknown_models = sorted(set(matrix.models) - set(MODEL_PROFILES))
     unknown_tasks = sorted(set(matrix.tasks) - set(TASKS))
-    if unknown_models or unknown_tasks or matrix.repeats < 1:
+    unknown_effort = matrix.effort is not None and matrix.effort not in EFFORTS
+    if not matrix.models or unknown_tasks or unknown_effort or matrix.repeats < 1:
         raise ValueError(
-            f"invalid matrix: unknown models {unknown_models}, unknown tasks {unknown_tasks}, repeats {matrix.repeats}"
+            f"invalid matrix: models {matrix.models}, unknown tasks {unknown_tasks}, effort {matrix.effort!r}, "
+            f"repeats {matrix.repeats}"
         )
     problems = prompt_problems(matrix.prompts, matrix.tasks, prompts_root)
     if problems:
@@ -119,18 +121,14 @@ class TaskResult:
     calls: list[CallRecord]
 
 
-def configure_eval_logging():
-    configure_logging(debug=False, log_file=None, log_format="text")
-
-
 class VariantRunner:
     def __init__(self, runner, agent, replacement):
         self.runner = runner
         self.agent = agent
         self.replacement = replacement
 
-    def run(self, agent, prompt, context=None):
-        return self.runner.run(self.replacement if agent is self.agent else agent, prompt, context=context)
+    def run(self, agent, prompt, functions=()):
+        return self.runner.run(self.replacement if agent is self.agent else agent, prompt, functions=functions)
 
 
 def validated_cases(names, expected_root=EXPECTED_ROOT, resources_root=RESOURCES_ROOT):
@@ -145,7 +143,7 @@ def validated_cases(names, expected_root=EXPECTED_ROOT, resources_root=RESOURCES
 def execute_task(runner, case, labels, repeat, task, variant=BASELINE_VARIANT):
     if not task.has_input(case, labels):
         return None
-    tags = {"model": runner.profile.name, "case": case.name, "repeat": repeat, "task": task.name,
+    tags = {"model": runner.model, "case": case.name, "repeat": repeat, "task": task.name,
             "prompt": variant.name}
     first_call = len(runner.calls)
     variant_runner = VariantRunner(runner, task.agent, variant.agent_for(task.agent))
@@ -177,13 +175,12 @@ def run_task(run_dir, runner, case, labels, repeat, task, variant=BASELINE_VARIA
         record_task(run_dir, result)
 
 
-def run_job(job, create_runner):
-    runner = create_runner(MODEL_PROFILES[job.model])
+def run_job(job, create_runner, effort):
+    runner = create_runner(job.model, effort)
     return execute_task(runner, job.case, job.case.load_labels(), job.repeat, TASKS[job.task], job.variant)
 
 
 def matrix_jobs(matrix, cases, variants):
-    # Models vary fastest so concurrent jobs spread across the providers' rate limits.
     return [
         TaskJob(model, case, repeat, task, variants[task][prompt])
         for case in cases
@@ -207,24 +204,20 @@ def agent_metadata(matrix, task, variants):
 def run_metadata(matrix, variants):
     return {
         "started_at": datetime.now(UTC).isoformat(timespec="seconds"),
-        "model_profiles": {
-            model: {"provider": MODEL_PROFILES[model].provider, "model_id": MODEL_PROFILES[model].model_id}
-            for model in matrix.models
-        },
         "agents": {task: agent_metadata(matrix, task, variants[task]) for task in matrix.tasks},
     }
 
 
-def run_matrix(matrix, run_dir, cases, create_runner=create_runner, prompts_root=PROMPTS_ROOT,
-               workers=DEFAULT_WORKERS, executor_class=ProcessPoolExecutor):
+def run_matrix(matrix, run_dir, cases, create_runner=ClaudeRunner.create, prompts_root=PROMPTS_ROOT,
+               workers=DEFAULT_WORKERS):
     variants = {task: load_variants(task, prompts_root) for task in matrix.tasks}
     write_json(run_dir / "matrix.json", {**asdict(matrix), "metadata": run_metadata(matrix, variants)})
-    # Fails on a missing API key or CLI before any job starts.
+    # Fails on a missing CLI before any job starts.
     for model in matrix.models:
-        create_runner(MODEL_PROFILES[model])
-    # Each job builds its own runner in a worker process; the SDK's clients are bound to one event loop.
-    with executor_class(max_workers=workers, initializer=configure_eval_logging) as executor:
-        futures = [executor.submit(run_job, job, create_runner) for job in matrix_jobs(matrix, cases, variants)]
+        create_runner(model, matrix.effort)
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [executor.submit(run_job, job, create_runner, matrix.effort)
+                   for job in matrix_jobs(matrix, cases, variants)]
         for future in as_completed(futures):
             if result := future.result():
                 record_task(run_dir, result)

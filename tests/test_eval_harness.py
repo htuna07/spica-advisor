@@ -1,6 +1,5 @@
 import csv
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-from types import SimpleNamespace
+from dataclasses import replace
 
 import pytest
 
@@ -114,21 +113,21 @@ RESPONSES = {
 
 
 class FakeRunner:
-    def __init__(self, name="claude-haiku-4-5", failing_prompts=()):
-        self.profile = SimpleNamespace(name=name)
+    def __init__(self, model="claude-haiku-4-5", failing_prompts=()):
+        self.model = model
         self.calls = []
         self.prompts = []
         self.agents = []
         self.failing_prompts = failing_prompts
 
-    def run(self, agent, prompt, context=None):
+    def run(self, agent, prompt, functions=()):
         self.prompts.append((agent.name, prompt))
         self.agents.append(agent)
         failed = any(marker in prompt for marker in self.failing_prompts)
         self.calls.append(CallRecord(
-            agent=agent.name, model=self.profile.name, status="ModelBehaviorError" if failed else "ok",
+            agent=agent.name, model=self.model, status="ModelBehaviorError" if failed else "ok",
             wall_seconds=1.0, requests=1, tool_calls=0, input_tokens=1000, cached_input_tokens=0,
-            cache_write_tokens=0, output_tokens=100, reasoning_tokens=0,
+            cache_write_tokens=0, output_tokens=100, reasoning_tokens=0, cost_usd=0.001,
         ))
         if failed:
             raise RuntimeError("model failed")
@@ -212,18 +211,15 @@ def test_run_task_records_failed_prediction(tmp_path, case):
 
 def test_matrix_run_produces_scored_summary(tmp_path, case):
     run_dir = tmp_path / "run"
-    pricing = tmp_path / "pricing.yaml"
-    pricing.write_text(
-        "usd_per_million_tokens:\n"
-        "  claude-haiku-4-5: {input: 1.0, cached_input: 0.1, cache_write: 1.25, output: 5.0}\n"
-    )
-    matrix = Matrix(models=["claude-haiku-4-5"], cases=["demo"], repeats=2, tasks=list(TASKS))
+    matrix = Matrix(models=["claude-haiku-4-5"], cases=["demo"], repeats=2, tasks=list(TASKS), effort="high")
+    efforts = []
 
-    run_matrix(matrix, run_dir, [case], create_runner=lambda profile: FakeRunner(profile.name),
-               executor_class=ThreadPoolExecutor)
-    summary_path = write_summary(
-        run_dir, expected_root=tmp_path / "expected", resources_root=tmp_path / "resources", pricing_path=pricing,
-    )
+    def create_runner(model, effort):
+        efforts.append(effort)
+        return FakeRunner(model)
+
+    run_matrix(matrix, run_dir, [case], create_runner=create_runner)
+    summary_path = write_summary(run_dir, expected_root=tmp_path / "expected", resources_root=tmp_path / "resources")
 
     summary = summary_path.read_text()
     assert "### sensitive_env_vars" in summary
@@ -235,11 +231,13 @@ def test_matrix_run_produces_scored_summary(tmp_path, case):
     assert overall_env["runs"] == "2"
     assert float(rows[("bucket_acl", "all")]["read_accuracy"]) == pytest.approx(0.5)
     assert float(rows[("policy_attachments", "all")]["f1"]) == 1.0
-    assert float(rows[("bucket_acl", "all")]["cost_per_run"]) == pytest.approx(2 * (1000 * 1.0 + 100 * 5.0) / 1e6)
+    assert float(rows[("bucket_acl", "all")]["cost_per_run"]) == pytest.approx(2 * 0.001)
+    assert set(efforts) == {"high"}
 
 
     results = read_json(run_dir / "results.json")
     assert results["matrix"]["models"] == ["claude-haiku-4-5"]
+    assert results["matrix"]["effort"] == "high"
     assert results["metadata"]["agents"]["bucket_acl"]["prompt_fingerprint"]
     assert results["tasks"]["sensitive_env_vars"]["primary_metric"] == "accuracy"
     assert "high_as_low" not in results["tasks"]["sensitive_env_vars"]["percent_metrics"]
@@ -248,22 +246,18 @@ def test_matrix_run_produces_scored_summary(tmp_path, case):
     assert '"run": "run"' in report
 
 
-def fake_runner_for(profile):
-    return FakeRunner(profile.name)
-
-
-def test_matrix_runs_jobs_in_worker_processes(tmp_path, case):
+def test_matrix_runs_jobs_concurrently(tmp_path, case):
     run_dir = tmp_path / "run"
     run_dir.mkdir()
-    matrix = Matrix(models=["claude-haiku-4-5", "gpt-6-luna"], cases=["demo"], repeats=2, tasks=list(TASKS))
+    matrix = Matrix(models=["claude-haiku-4-5", "claude-opus-5-5"], cases=["demo"], repeats=2, tasks=list(TASKS))
 
-    run_matrix(matrix, run_dir, [case], create_runner=fake_runner_for, workers=2, executor_class=ProcessPoolExecutor)
+    run_matrix(matrix, run_dir, [case], create_runner=lambda model, effort: FakeRunner(model), workers=2)
 
     runs = read_jsonl(run_dir / "runs.jsonl")
     assert len(runs) == 2 * 2 * len(TASKS)
     assert {run["status"] for run in runs} == {"ok"}
     assert sum(run["calls"] for run in runs) == len(read_jsonl(run_dir / "calls.jsonl"))
-    assert read_json(output_path(run_dir, "gpt-6-luna", "demo", 2, "bucket_acl"))["status"] == "ok"
+    assert read_json(output_path(run_dir, "claude-opus-5-5", "demo", 2, "bucket_acl"))["status"] == "ok"
 
 
 def test_matrix_jobs_alternate_models_first(case):
@@ -315,7 +309,7 @@ def test_variant_run_swaps_instructions_and_input_and_tags_the_prompt(tmp_path, 
 
 def test_variant_runner_only_replaces_its_own_agent():
     runner = FakeRunner()
-    replacement = ENDPOINT_RISK_AGENT.clone(instructions="Only the listed handlers.")
+    replacement = replace(ENDPOINT_RISK_AGENT, instructions="Only the listed handlers.")
     variant_runner = VariantRunner(runner, ENDPOINT_RISK_AGENT, replacement)
 
     variant_runner.run(ENDPOINT_RISK_AGENT, "endpoints")
@@ -326,16 +320,13 @@ def test_variant_runner_only_replaces_its_own_agent():
 
 def test_prompt_matrix_reports_one_series_per_model_and_prompt(tmp_path, case, prompts_root):
     run_dir = tmp_path / "run"
-    pricing = tmp_path / "pricing.yaml"
-    pricing.write_text("usd_per_million_tokens: {}\n")
     matrix = Matrix(models=["claude-haiku-4-5"], cases=["demo"], repeats=1,
                     tasks=["unauthenticated_endpoints", "sensitive_env_vars"],
                     prompts={"unauthenticated_endpoints": ["baseline", "strict"]})
 
-    run_matrix(matrix, run_dir, [case], create_runner=lambda profile: FakeRunner(profile.name),
-               executor_class=ThreadPoolExecutor, prompts_root=prompts_root)
-    write_summary(run_dir, expected_root=tmp_path / "expected", resources_root=tmp_path / "resources",
-                  pricing_path=pricing)
+    run_matrix(matrix, run_dir, [case], create_runner=lambda model, effort: FakeRunner(model),
+               prompts_root=prompts_root)
+    write_summary(run_dir, expected_root=tmp_path / "expected", resources_root=tmp_path / "resources")
 
     results = read_json(run_dir / "results.json")
     assert [series["name"] for series in results["matrix"]["series"]] == [
@@ -355,14 +346,10 @@ def test_prompt_matrix_reports_one_series_per_model_and_prompt(tmp_path, case, p
 
 def test_model_matrix_keeps_model_names_as_series(tmp_path, case):
     run_dir = tmp_path / "run"
-    pricing = tmp_path / "pricing.yaml"
-    pricing.write_text("usd_per_million_tokens: {}\n")
     matrix = Matrix(models=["claude-haiku-4-5"], cases=["demo"], repeats=1, tasks=["sensitive_env_vars"])
 
-    run_matrix(matrix, run_dir, [case], create_runner=lambda profile: FakeRunner(profile.name),
-               executor_class=ThreadPoolExecutor)
-    write_summary(run_dir, expected_root=tmp_path / "expected", resources_root=tmp_path / "resources",
-                  pricing_path=pricing)
+    run_matrix(matrix, run_dir, [case], create_runner=lambda model, effort: FakeRunner(model))
+    write_summary(run_dir, expected_root=tmp_path / "expected", resources_root=tmp_path / "resources")
 
     results = read_json(run_dir / "results.json")
     assert [series["name"] for series in results["matrix"]["series"]] == ["claude-haiku-4-5"]
@@ -380,3 +367,19 @@ def test_resolve_matrix_rejects_bad_prompt_selections(tmp_path, prompts_root, pr
 
     with pytest.raises(ValueError, match=problem):
         resolve_matrix(matrix_path, tasks=["unauthenticated_endpoints"], prompts=prompts, prompts_root=prompts_root)
+
+
+def test_resolve_matrix_rejects_unknown_effort(tmp_path):
+    matrix_path = tmp_path / "matrix.yaml"
+    matrix_path.write_text("models: [claude-haiku-4-5]\ncases: [demo]\nrepeats: 1\ntasks: all\neffort: extreme\n")
+
+    with pytest.raises(ValueError, match="effort 'extreme'"):
+        resolve_matrix(matrix_path)
+
+
+def test_resolve_matrix_takes_effort_from_the_argument_over_the_file(tmp_path):
+    matrix_path = tmp_path / "matrix.yaml"
+    matrix_path.write_text("models: [claude-haiku-4-5]\ncases: [demo]\nrepeats: 1\ntasks: all\neffort: low\n")
+
+    assert resolve_matrix(matrix_path, effort="max").effort == "max"
+    assert resolve_matrix(matrix_path).effort == "low"

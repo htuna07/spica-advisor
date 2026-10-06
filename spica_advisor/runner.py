@@ -1,81 +1,162 @@
+import json
 import os
+import shutil
+import subprocess
+import tempfile
 import time
+from pathlib import Path
 
-from agents import Agent, RunConfig, Runner, Usage, set_default_openai_client
 from dotenv import load_dotenv
-from openai import AsyncOpenAI
 
-from spica_advisor.hooks import InteractionLoggingHooks
+from spica_advisor.function_files import write_function_files
+from spica_advisor.log import LOGGER
 from spica_advisor.metrics import OK_STATUS, CallRecord
-from spica_advisor.model_profiles import ModelProfile
 
 
+CLI = "claude"
+MODEL_ENV_VAR = "SPICA_ADVISOR_MODEL"
+EFFORT_ENV_VAR = "SPICA_ADVISOR_EFFORT"
+DEFAULT_MODEL = "claude-sonnet-5-5"
+EFFORTS = ("low", "medium", "high", "xhigh", "max")
 MAX_TURNS = 10
-# Batched investigations can exceed the per-minute token limit; the client waits out
-# each 429 using the server's retry-after delay, so allow enough attempts to span a minute.
-OPENAI_MAX_RETRIES = 8
-TRACING_ENV_VAR = "SPICA_ADVISOR_TRACING"
-ENABLED_VALUES = {"1", "true", "yes"}
+FILE_TOOLS = ("Grep", "Glob", "Read")
+STRUCTURED_OUTPUT_TOOL = "StructuredOutput"
+CALL_TIMEOUT_SECONDS = 900
+# The CLI bills this key instead of the signed-in subscription whenever it is set.
+API_KEY_ENV_VAR = "ANTHROPIC_API_KEY"
 
 
-def tracing_enabled():
-    return os.environ.get(TRACING_ENV_VAR, "").strip().lower() in ENABLED_VALUES
+class ClaudeError(RuntimeError):
+    pass
 
 
-def failed_run_progress(error):
-    run_data = getattr(error, "run_data", None)
-    if run_data is None:
-        return Usage(), []
-    return run_data.context_wrapper.usage, run_data.new_items
+def require_cli():
+    if not shutil.which(CLI):
+        raise RuntimeError(f"Claude Code ({CLI}) must be on PATH and signed in")
 
 
-class AgentRunner:
-    def __init__(self, profile: ModelProfile, tracing=False):
-        self.profile = profile
-        self.run_config = RunConfig(
-            model=profile.build_model(),
-            model_settings=profile.settings,
-            tracing_disabled=not tracing,
-        )
-        self.hooks = InteractionLoggingHooks()
+def subscription_env():
+    return {name: value for name, value in os.environ.items() if name != API_KEY_ENV_VAR}
+
+
+def read_events(stdout):
+    return [json.loads(line) for line in stdout.splitlines() if line.startswith("{")]
+
+
+def result_event(events):
+    return next((event for event in reversed(events) if event.get("type") == "result"), None)
+
+
+def tool_uses(events):
+    return [
+        block
+        for event in events if event.get("type") == "assistant"
+        for block in event["message"]["content"] if block.get("type") == "tool_use"
+    ]
+
+
+def structured_output(agent, events, stderr):
+    result = result_event(events)
+    if result is None:
+        raise ClaudeError(stderr.strip() or "Claude Code returned no result")
+    if result.get("is_error") or result.get("structured_output") is None:
+        details = result.get("errors") or [result.get("result")]
+        raise ClaudeError(f"{result.get('subtype')}: {details}")
+    return agent.output_type.model_validate(result["structured_output"])
+
+
+def call_record(agent, model, status, wall_seconds, events):
+    result = result_event(events) or {}
+    usages = (result.get("modelUsage") or {}).values()
+
+    def total(key):
+        return sum(usage.get(key, 0) for usage in usages)
+
+    cached, cache_write = total("cacheReadInputTokens"), total("cacheCreationInputTokens")
+    return CallRecord(
+        agent=agent,
+        model=model,
+        status=status,
+        wall_seconds=round(wall_seconds, 3),
+        requests=result.get("num_turns", 0),
+        tool_calls=sum(tool_use["name"] != STRUCTURED_OUTPUT_TOOL for tool_use in tool_uses(events)),
+        input_tokens=total("inputTokens") + cached + cache_write,
+        cached_input_tokens=cached,
+        cache_write_tokens=cache_write,
+        output_tokens=total("outputTokens"),
+        reasoning_tokens=total("thinkingTokens"),
+        cost_usd=result.get("total_cost_usd"),
+    )
+
+
+class ClaudeRunner:
+    def __init__(self, model=DEFAULT_MODEL, effort=None):
+        if effort is not None and effort not in EFFORTS:
+            raise ValueError(f"Unknown effort {effort!r} (choose from {', '.join(EFFORTS)})")
+        self.model = model
+        self.effort = effort
         self.calls: list[CallRecord] = []
 
     @classmethod
-    def from_env(cls, profile):
+    def create(cls, model=DEFAULT_MODEL, effort=None):
+        require_cli()
+        return cls(model, effort)
+
+    @classmethod
+    def from_env(cls):
         load_dotenv()
-        tracing = tracing_enabled()
-        # Traces are exported to the OpenAI platform, whatever model produced them.
-        if tracing and not os.environ.get("OPENAI_API_KEY"):
-            raise ValueError(f"{TRACING_ENV_VAR} requires OPENAI_API_KEY")
-        if profile.is_openai:
-            set_default_openai_client(AsyncOpenAI(max_retries=OPENAI_MAX_RETRIES))
-        return cls(profile, tracing)
+        return cls.create(
+            os.environ.get(MODEL_ENV_VAR, "").strip() or DEFAULT_MODEL,
+            os.environ.get(EFFORT_ENV_VAR, "").strip() or None,
+        )
 
-    def run(self, agent: Agent, prompt, context=None):
-        started = time.perf_counter()
-        try:
-            result = Runner.run_sync(
-                agent,
-                prompt,
-                context=context,
-                hooks=self.hooks,
-                auto_previous_response_id=self.profile.uses_responses_api,
-                max_turns=MAX_TURNS,
-                run_config=self.run_config,
+    def command(self, agent, tools):
+        effort = ["--effort", self.effort] if self.effort else []
+        return [
+            CLI, "-p", "--safe-mode", "--restricted", "--no-session-persistence",
+            "--output-format", "stream-json", "--verbose",
+            "--max-turns", str(MAX_TURNS),
+            "--model", self.model,
+            *effort,
+            "--tools", ",".join(tools),
+            "--system-prompt", agent.instructions,
+            "--json-schema", json.dumps(agent.output_type.model_json_schema()),
+        ]
+
+    def execute(self, agent, prompt, functions):
+        # An empty working directory keeps the file tools away from everything but the given sources.
+        with tempfile.TemporaryDirectory() as workspace:
+            tools = ()
+            if functions:
+                prompt = f"{prompt}\n\n{write_function_files(functions, Path(workspace))}"
+                tools = FILE_TOOLS
+            return subprocess.run(
+                self.command(agent, tools),
+                input=prompt,
+                cwd=workspace,
+                env=subscription_env(),
+                capture_output=True,
+                text=True,
+                timeout=CALL_TIMEOUT_SECONDS,
             )
-        except Exception as error:
-            usage, items = failed_run_progress(error)
-            self._record(agent, type(error).__name__, started, usage, items)
-            raise
-        self._record(agent, OK_STATUS, started, result.context_wrapper.usage, result.new_items)
-        return result.final_output
 
-    def _record(self, agent, status, started, usage, items):
-        self.calls.append(CallRecord.from_run(
-            agent=agent.name,
-            model=self.profile.name,
-            status=status,
-            wall_seconds=time.perf_counter() - started,
-            usage=usage,
-            items=items,
-        ))
+    def run(self, agent, prompt, functions=()):
+        started = time.perf_counter()
+        events = []
+        try:
+            completed = self.execute(agent, prompt, functions)
+            events = read_events(completed.stdout)
+            output = structured_output(agent, events, completed.stderr)
+        except Exception as error:
+            self._record(agent, type(error).__name__, started, events)
+            raise
+        self._record(agent, OK_STATUS, started, events)
+        return output
+
+    def _record(self, agent, status, started, events):
+        LOGGER.debug("Claude call finished for %s", agent.name, extra={"payload": {
+            "agent": agent.name,
+            "status": status,
+            "events": events,
+        }})
+        self.calls.append(call_record(agent.name, self.model, status, time.perf_counter() - started, events))

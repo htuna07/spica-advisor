@@ -84,7 +84,7 @@ def find_policy_attachments(context: BrokenAccessControlContext):
     response = context.runner.run(
         POLICY_ATTACHMENT_AGENT,
         ATTACHMENT_INPUT,
-        context=context.functions,
+        functions=context.functions,
     )
     context.attachment_reports = response.reports
     attaching_function_ids = {report.attachment.function_id for report in context.attachment_reports}

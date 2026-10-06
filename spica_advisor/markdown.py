@@ -53,6 +53,7 @@ class Section:
 @dataclass(frozen=True)
 class ReportMetadata:
     model: str
+    effort: str | None = None
     commit: str | None = None
     commit_url: str | None = None
     run_url: str | None = None
@@ -75,6 +76,8 @@ def table(columns, rows):
 
 def header(metadata):
     details = [f"Model {code(metadata.model)}"]
+    if metadata.effort:
+        details.append(f"Effort {code(metadata.effort)}")
     if metadata.commit:
         commit = code(metadata.commit[:7])
         details.insert(0, f"Commit [{commit}]({metadata.commit_url})" if metadata.commit_url else f"Commit {commit}")
