@@ -1,6 +1,6 @@
 # Spica Advisor
 
-Spica Advisor reviews Spica resources like functions, buckets, secrets, policies,
+Spica Advisor reviews Spica resources like functions, buckets, secrets, environment variables, policies,
 and finds potential security issues, improvements, and optimizations. 
 It then provides practical suggestions for addressing them.
 
@@ -27,8 +27,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: htuna07/spica-advisor@main
         with:
-          model: claude-sonnet-5-5
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: <model-name>
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }} # or openai
 ```
 
 Each run writes the report to the job summary and keeps it in one issue labeled
